@@ -1,0 +1,97 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --navy: #1E3A8A; --navyD: #1D4ED8;
+  --sage: #22C55E; --sageL: #86EFAC;
+  --red: #EF4444; --gold: #F59E0B; --goldD: #D97706;
+  --ink: #111827; --inkM: #374151; --gray: #6B7280;
+  --border: #E5E7EB; --cream: #FAFAF9; --white: #FFFFFF;
+  --surf: #F6F8FA; --grayL: #F3F4F6; --purple: #7C3AED;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+html, body { height: 100%; overflow: hidden; background: #0F172A; }
+
+#app {
+  width: 390px; max-width: 100vw; height: 100dvh;
+  margin: 0 auto; background: var(--cream);
+  display: flex; flex-direction: column;
+  position: relative; overflow: hidden;
+}
+
+.screen { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.screen::-webkit-scrollbar { display: none; }
+
+#bottom-nav {
+  display: flex; background: var(--white); border-top: 1px solid var(--border);
+  padding: 6px 0 max(8px, env(safe-area-inset-bottom)); flex-shrink: 0;
+}
+.nav-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: none; cursor: pointer; padding: 4px 0;
+  color: #9CA3AF; font-family: inherit; transition: color .2s;
+}
+.nav-btn.active { color: var(--navy); }
+.nav-btn .nav-icon {
+  width: 34px; height: 34px; border-radius: 10px; display: flex;
+  align-items: center; justify-content: center; transition: background .2s;
+}
+.nav-btn.active .nav-icon { background: #EFF6FF; }
+.nav-btn span { font-size: 9px; font-weight: 800; }
+
+#status-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 22px 5px; font-size: 11px; font-weight: 800; flex-shrink: 0;
+  transition: background .3s, color .3s;
+}
+#status-bar.dark { background: var(--navy) !important; color: #fff !important; }
+.notch { width: 100px; height: 26px; background: #18181B; border-radius: 16px; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fadeIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes cfFall { 0% { opacity: 1; transform: translateY(-10px) rotate(0deg); } 100% { opacity: 0; transform: translateY(600px) rotate(900deg); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulseRed { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-5px); } }
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+
+.card { background: var(--white); border-radius: 16px; border: 1px solid var(--border); padding: 14px; }
+.btn-primary { background: var(--navy); color: #fff; border: none; border-radius: 14px; padding: 13px 20px; font-weight: 800; font-size: 14px; font-family: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; transition: opacity .15s; }
+.btn-primary:active { opacity: .8; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.pill-red { background: #FEE2E2; color: #B91C1C; }
+.pill-green { background: #DCFCE7; color: #15803D; }
+.pill-amber { background: #FEF9C3; color: #92400E; }
+
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.58); z-index: 100; display: flex; align-items: flex-end; animation: fadeIn .18s; }
+.modal-sheet { background: var(--white); border-radius: 26px 26px 0 0; width: 100%; max-height: 90%; overflow: hidden; display: flex; flex-direction: column; animation: slideUp .3s; }
+.modal-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 16px auto 0; }
+.modal-body { overflow-y: auto; flex: 1; }
+.modal-body::-webkit-scrollbar { display: none; }
+
+.swipe-row { position: relative; margin-bottom: 8px; border-radius: 14px; overflow: hidden; user-select: none; touch-action: pan-y; }
+.swipe-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-radius: 14px; background: #F0F2F5; }
+.swipe-card { display: flex; align-items: center; gap: 12px; background: var(--white); border-radius: 14px; padding: 12px 13px; border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.05); cursor: grab; position: relative; will-change: transform; }
+
+.shimmer-card { background: linear-gradient(90deg, #F3F4F6 25%, #E5E7EB 50%, #F3F4F6 75%); background-size: 400px 100%; animation: shimmer 1.4s infinite; border-radius: 18px; margin-bottom: 14px; }
+
+.ob-screen { position: absolute; inset: 0; background: var(--cream); display: flex; flex-direction: column; z-index: 200; overflow-y: auto; }
+.ob-screen::-webkit-scrollbar { display: none; }
+.progress-bar { height: 3px; background: var(--grayL); border-radius: 2px; margin: 0 20px 20px; }
+.progress-fill { height: 3px; background: var(--navy); border-radius: 2px; transition: width .4s; }
+
+.cook-overlay { position: absolute; inset: 0; background: var(--cream); z-index: 150; display: flex; flex-direction: column; overflow: hidden; }
+
+.period-tabs { display: flex; gap: 8px; padding: 12px 14px; background: var(--white); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.period-tab { flex: 1; background: var(--grayL); border-radius: 12px; border: 1.5px solid var(--border); padding: 9px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; transition: all .2s; }
+.period-tab.active { border-width: 2px; }
+
+#confetti-layer { position: absolute; inset: 0; pointer-events: none; z-index: 50; overflow: hidden; }
+
+input[type="text"], input[type="time"] {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: var(--grayL); border: none; outline: none;
+  color: var(--ink); border-radius: 12px; padding: 10px 14px; font-size: 13px;
+}
+input:focus { box-shadow: 0 0 0 2px #BFDBFE; }
