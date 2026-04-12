@@ -146,7 +146,7 @@ export default function App() {
   // ── Persistent state (localStorage) ────────────────────────────
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [profile, setProfile] = useState<Profile>({
-    name:'', city:'Mumbai', isVeg:true, eatsEggs:true,
+    name:'', city:'', isVeg:true, eatsEggs:true,
     hasToddler:false, toddlerName:'', toddlerAge:2, familySize:2, allergies:[],
     notifTimes:{breakfast:'07:30',lunch:'11:30',snack:'16:00',dinner:'17:30'},
   });
@@ -436,11 +436,31 @@ export default function App() {
             <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>We&apos;ll personalise everything for you.</p>
             <input type="text" value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
               placeholder="Your first name" style={{width:'100%',marginBottom:20,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
-            <p style={{fontSize:13,fontWeight:700,color:'var(--gray)',marginBottom:10}}>Your city</p>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              {['Mumbai','Delhi','Bangalore','Singapore','London','Sydney','New York','Toronto'].map(c=>(
+            <p style={{fontSize:13,fontWeight:700,color:'var(--gray)',marginBottom:8}}>Your city</p>
+            <div style={{position:'relative',marginBottom:10}}>
+              <input type="text" value={profile.city}
+                onChange={e=>setProfile(p=>({...p,city:e.target.value}))}
+                placeholder="Type your city…"
+                style={{width:'100%',border:'2px solid var(--border)',borderRadius:12,padding:'11px 44px 11px 14px',fontSize:14,fontWeight:600,color:'var(--ink)',background:'#fff',boxSizing:'border-box'}}/>
+              <button onClick={()=>{
+                if(!navigator.geolocation){return;}
+                navigator.geolocation.getCurrentPosition(async pos=>{
+                  try{
+                    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
+                    const d=await r.json();
+                    const c=d.address?.city||d.address?.town||d.address?.village||d.address?.county||'';
+                    if(c) setProfile(p=>({...p,city:c}));
+                  }catch{}
+                },()=>{});
+              }} title="Detect my location"
+                style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:20,lineHeight:1,padding:0}}>
+                📍
+              </button>
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {['Mumbai','Delhi','Bangalore','London','New York','Dubai','Singapore','Sydney','Toronto','Lagos','Nairobi','São Paulo'].map(c=>(
                 <div key={c} onClick={()=>setProfile(p=>({...p,city:c}))}
-                  style={{background:profile.city===c?'#EFF6FF':'',border:`1.5px solid ${profile.city===c?'var(--navy)':'var(--border)'}`,borderRadius:12,padding:11,textAlign:'center',fontSize:13,fontWeight:profile.city===c?700:500,color:profile.city===c?'var(--navy)':'var(--ink)',cursor:'pointer'}}>
+                  style={{background:profile.city===c?'#EFF6FF':'var(--surface)',border:`1.5px solid ${profile.city===c?'var(--navy)':'var(--border)'}`,borderRadius:20,padding:'5px 12px',fontSize:12,fontWeight:profile.city===c?700:500,color:profile.city===c?'var(--navy)':'var(--ink)',cursor:'pointer',whiteSpace:'nowrap'}}>
                   {c}
                 </div>
               ))}
