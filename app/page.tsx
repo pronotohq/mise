@@ -265,7 +265,7 @@ export default function App() {
     setVoiceTranscript('');
 
     // Try browser SpeechRecognition first (Chrome/Android — free, instant)
-    // @ts-expect-error webkit prefix
+    // @ts-ignore webkit prefix
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if(SR) {
       const rec = new SR();
@@ -305,7 +305,6 @@ export default function App() {
 
   const stopVoice = () => {
     setRecording(false);
-    // @ts-expect-error webkit
     if(recognitionRef.current) { (recognitionRef.current as {stop:()=>void}).stop(); recognitionRef.current=null; }
     if(mediaRecorderRef.current?.state==='recording') mediaRecorderRef.current.stop();
   };
