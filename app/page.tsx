@@ -423,8 +423,8 @@ export default function App() {
         {step==='welcome'&&(
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(160deg,#0F172A,#1E3A5F)'}}>
             <div style={{width:72,height:72,borderRadius:20,background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:36,marginBottom:20}}>🍽️</div>
-            <h1 style={{fontSize:32,fontWeight:900,color:'#fff',letterSpacing:-1,marginBottom:8}}>Mise</h1>
-            <p style={{fontSize:14,color:'#93C5FD',textAlign:'center',lineHeight:1.6,marginBottom:40}}>Your kitchen, always ready.<br/>Never wonder what to cook again.</p>
+            <h1 style={{fontSize:32,fontWeight:900,color:'#fff',letterSpacing:-1,marginBottom:8}}>FreshNudge</h1>
+            <p style={{fontSize:14,color:'#93C5FD',textAlign:'center',lineHeight:1.6,marginBottom:40}}>Your kitchen, on autopilot.<br/>Never wonder what to cook again.</p>
             <button className="btn-primary" onClick={()=>setObStep(1)} style={{background:'#22C55E',fontSize:16,padding:16}}>Get started →</button>
             <p style={{fontSize:11,color:'#475569',marginTop:20,textAlign:'center'}}>🔒 Works offline · Your data stays on your device</p>
           </div>
@@ -956,8 +956,8 @@ export default function App() {
         <div style={{padding:'16px 22px 12px',flexShrink:0}}>
           <div style={{textAlign:'center',marginBottom:16}}>
             <div style={{fontSize:38,marginBottom:8}}>👑</div>
-            <h2 style={{fontSize:22,fontWeight:900,color:'var(--ink)',letterSpacing:-.4}}>Mise Premium</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginTop:4}}>Your fridge, your meals, on autopilot.</p>
+            <h2 style={{fontSize:22,fontWeight:900,color:'var(--ink)',letterSpacing:-.4}}>FreshNudge Premium</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginTop:4}}>Your kitchen, on autopilot.</p>
           </div>
           <div style={{background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'2px solid #F59E0B',borderRadius:16,padding:'14px 16px',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
             <div><span style={{fontSize:34,fontWeight:900,color:'#92400E'}}>₹299</span><span style={{fontSize:14,color:'#B45309',fontWeight:600}}>/month</span></div>
@@ -974,7 +974,7 @@ export default function App() {
           ))}
           <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:12,padding:14,marginBottom:16}}>
             <p style={{fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:8}}>💡 The math</p>
-            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One unnecessary Swiggy/Deliveroo order = ₹600–800. Mise costs <strong>₹299/month</strong>. Stop one delivery order and the app pays for itself.</p>
+            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One unnecessary Swiggy/Deliveroo order = ₹600–800. FreshNudge costs <strong>₹299/month</strong>. Stop one delivery order and the app pays for itself.</p>
           </div>
         </div>
         <div style={{padding:'12px 22px',paddingBottom:'max(28px,env(safe-area-inset-bottom))'}}>

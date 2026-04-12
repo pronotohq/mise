@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Mise — Your kitchen, always ready',
+  title: 'FreshNudge — Your kitchen, on autopilot',
   description: 'Fridge tracking + meal suggestions. Never wonder what to cook again.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Mise',
+    title: 'FreshNudge',
   },
 };
 

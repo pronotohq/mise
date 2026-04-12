@@ -1,7 +1,7 @@
 {
-  "name": "Mise — Kitchen OS",
-  "short_name": "Mise",
-  "description": "Your fridge, your meals, on autopilot.",
+  "name": "FreshNudge — Kitchen OS",
+  "short_name": "FreshNudge",
+  "description": "Your kitchen, on autopilot.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FAFAF9",
