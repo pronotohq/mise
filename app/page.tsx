@@ -22,6 +22,7 @@ interface Profile {
   notifTimes: Record<string, string>;
 }
 interface CookLog { id: string; name: string; period: string; date: string; }
+interface ItemLog  { id: string; name: string; emoji: string; price: number; date: string; }
 
 // ── Constants ──────────────────────────────────────────────────────
 const SHELF: Record<string, number> = {
@@ -128,6 +129,8 @@ export default function App() {
   const [family, setFamily] = useState<FamilyMember[]>([]);
   const [pantry, setPantry] = useState<PantryItem[]>([]);
   const [cookLog, setCookLog] = useState<CookLog[]>([]);
+  const [wasteLog, setWasteLog] = useState<ItemLog[]>([]);
+  const [ateLog,   setAteLog]   = useState<ItemLog[]>([]);
   const [isPremium, setIsPremium] = useState(false);
 
   // ── UI state ────────────────────────────────────────────────────
@@ -163,13 +166,15 @@ export default function App() {
         if(d.family)   setFamily(d.family);
         if(d.pantry)   setPantry(d.pantry);
         if(d.cookLog)  setCookLog(d.cookLog);
+        if(d.wasteLog) setWasteLog(d.wasteLog);
+        if(d.ateLog)   setAteLog(d.ateLog);
         if(d.isPremium) setIsPremium(true);
       }
     } catch{}
   },[]);
 
   // ── Save to localStorage ────────────────────────────────────────
-  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];isPremium:boolean}>)=>{
+  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];wasteLog:ItemLog[];ateLog:ItemLog[];isPremium:boolean}>)=>{
     try {
       const current = JSON.parse(localStorage.getItem('mise_v1')||'{}');
       localStorage.setItem('mise_v1', JSON.stringify({...current,...updates}));
@@ -332,12 +337,18 @@ export default function App() {
   // ── Pantry helpers ──────────────────────────────────────────────
   const markUsed=(id:string)=>{
     setConfetti(true); setTimeout(()=>setConfetti(false),2200);
-    const updated = pantry.filter(i=>i.id!==id);
-    setPantry(updated); save({pantry:updated});
+    const item = pantry.find(i=>i.id===id);
+    const updatedPantry = pantry.filter(i=>i.id!==id);
+    const updatedAte = item ? [...ateLog,{id:uid(),name:item.name,emoji:item.emoji,price:item.price||0,date:new Date().toISOString()}] : ateLog;
+    setPantry(updatedPantry); setAteLog(updatedAte);
+    save({pantry:updatedPantry,ateLog:updatedAte});
   };
   const markWasted=(id:string)=>{
-    const updated = pantry.filter(i=>i.id!==id);
-    setPantry(updated); save({pantry:updated});
+    const item = pantry.find(i=>i.id===id);
+    const updatedPantry = pantry.filter(i=>i.id!==id);
+    const updatedWaste = item ? [...wasteLog,{id:uid(),name:item.name,emoji:item.emoji,price:item.price||0,date:new Date().toISOString()}] : wasteLog;
+    setPantry(updatedPantry); setWasteLog(updatedWaste);
+    save({pantry:updatedPantry,wasteLog:updatedWaste});
   };
   const applyExpiryEdit=()=>{
     if(!editExpiry) return;
@@ -854,59 +865,153 @@ export default function App() {
   // ════════════════════════════════════════════════
   const renderInsights = () => {
     const total = pantry.reduce((a,i)=>a+(i.price||0),0);
-    const cats: Record<string,number> = {};
-    pantry.forEach(i=>{ cats[i.cat]=(cats[i.cat]||0)+(i.price||0); });
+
+    // ── Money saved vs takeout ──────────────────
+    const AVG_TAKEOUT = 350;
+    const moneySaved = cookLog.length * AVG_TAKEOUT;
+
+    // ── Cook streak ─────────────────────────────
+    const streak = (() => {
+      if(!cookLog.length) return 0;
+      const days = [...new Set(cookLog.map(l=>l.date.slice(0,10)))].sort().reverse();
+      let s = 0;
+      const today = new Date(); today.setHours(0,0,0,0);
+      for(let i=0;i<days.length;i++){
+        const d = new Date(days[i]);
+        const diff = Math.round((today.getTime()-d.getTime())/(86400000));
+        if(diff===i||diff===i+1){ s++; } else break;
+      }
+      return s;
+    })();
+
+    // ── Fridge efficiency score ──────────────────
+    const totalUsed   = ateLog.length + cookLog.length;
+    const totalWasted = wasteLog.length;
+    const effScore = totalUsed+totalWasted===0 ? null : Math.round(totalUsed/(totalUsed+totalWasted)*100);
+
+    // ── Most wasted item ────────────────────────
+    const wasteCounts: Record<string,{count:number;emoji:string}> = {};
+    wasteLog.forEach(w=>{ wasteCounts[w.name]={count:(wasteCounts[w.name]?.count||0)+1,emoji:w.emoji}; });
+    const worstItem = Object.entries(wasteCounts).sort((a,b)=>b[1].count-a[1].count)[0];
+
+    // ── Cooking personality ──────────────────────
+    const personality = (() => {
+      if(!cookLog.length) return null;
+      const periods: Record<string,number> = {};
+      cookLog.forEach(l=>{ periods[l.period]=(periods[l.period]||0)+1; });
+      const uniqueMeals = new Set(cookLog.map(l=>l.name)).size;
+      const variety = uniqueMeals / cookLog.length;
+      if(variety>0.8) return {label:'The Experimenter',desc:'You rarely cook the same thing twice.',emoji:'🧪'};
+      if(periods['breakfast']>=(cookLog.length*0.4)) return {label:'The Morning Person',desc:'You cook breakfast more than anyone.',emoji:'☀️'};
+      if(periods['dinner']>=(cookLog.length*0.6)) return {label:'The Dinner Anchor',desc:'Home-cooked dinners are your thing.',emoji:'🌙'};
+      if(cookLog.length>=14&&variety<0.4) return {label:'The Comfort Cook',desc:'A few trusted meals, cooked with love.',emoji:'🫶'};
+      return {label:'The Everyday Cook',desc:'Consistent, reliable, no fuss.',emoji:'🍳'};
+    })();
+
+    // ── Waste cost this month ────────────────────
+    const thisMonth = new Date(); thisMonth.setDate(1); thisMonth.setHours(0,0,0,0);
+    const wasteThisMonth = wasteLog.filter(w=>new Date(w.date)>=thisMonth);
+    const wasteCost = wasteThisMonth.reduce((a,w)=>a+w.price,0);
+
     return (
       <div className="screen" style={{background:'var(--cream)'}}>
-        <div style={{padding:'14px 16px 0'}}>
+        <div style={{padding:'14px 16px 8px',flexShrink:0}}>
           <h1 style={{fontSize:26,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>Insights</h1>
-          <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{profile.name}&apos;s kitchen</p>
+          <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{profile.name ? `${profile.name}'s kitchen` : 'Your kitchen'}</p>
         </div>
-        <div style={{padding:'12px 16px 24px'}}>
-          {/* Fridge value */}
-          <div style={{background:`linear-gradient(135deg,var(--navy),var(--navyD))`,borderRadius:20,padding:20,marginBottom:12}}>
-            <p style={{fontSize:11,color:'#93C5FD',fontWeight:700,letterSpacing:.6}}>FRIDGE VALUE NOW</p>
-            <p style={{fontSize:34,fontWeight:900,color:'#fff',marginTop:4}}>₹{total.toLocaleString()}</p>
-            <p style={{fontSize:13,color:'#BFDBFE',marginTop:3}}>worth of food in your kitchen</p>
-            <div style={{display:'flex',gap:22,marginTop:14}}>
-              {[[urgent.length,'expire today'],[pantry.filter(i=>daysLeft(i.expiry)<=3).length,'use in 3 days'],[cookLog.length,'meals cooked']].map(([v,l])=>(
-                <div key={String(l)}><div style={{fontWeight:900,fontSize:18,color:'#fff'}}>{v}</div><div style={{fontSize:10,color:'#93C5FD'}}>{l}</div></div>
+        <div style={{overflowY:'auto',padding:'4px 16px 32px'}}>
+
+          {/* ── Hero: money saved ── */}
+          <div style={{background:'linear-gradient(135deg,#14532D,#166534)',borderRadius:20,padding:20,marginBottom:12}}>
+            <p style={{fontSize:11,color:'#86EFAC',fontWeight:700,letterSpacing:.6}}>SAVED VS ORDERING IN</p>
+            <p style={{fontSize:38,fontWeight:900,color:'#fff',marginTop:4}}>₹{moneySaved.toLocaleString()}</p>
+            <p style={{fontSize:13,color:'#BBF7D0',marginTop:2}}>{cookLog.length} home-cooked meals · avg ₹{AVG_TAKEOUT} saved each</p>
+            <div style={{display:'flex',gap:20,marginTop:14}}>
+              {[[urgent.length,'expire today'],[pantry.filter(i=>daysLeft(i.expiry)<=3).length,'use in 3 days'],[`₹${total.toLocaleString()}`, 'in fridge now']].map(([v,l])=>(
+                <div key={String(l)}><div style={{fontWeight:900,fontSize:16,color:'#fff'}}>{v}</div><div style={{fontSize:10,color:'#86EFAC'}}>{l}</div></div>
               ))}
             </div>
           </div>
-          {/* Recently cooked */}
+
+          {/* ── Row: streak + efficiency ── */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div style={{background:'var(--white)',borderRadius:16,padding:16,border:'1px solid var(--border)'}}>
+              <div style={{fontSize:28,marginBottom:6}}>🔥</div>
+              <div style={{fontSize:28,fontWeight:900,color:streak>0?'#EA580C':'var(--gray)'}}>{streak}</div>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginTop:2}}>day cook streak</div>
+              <div style={{fontSize:10,color:'var(--gray)',marginTop:4}}>{streak===0?'Cook today to start':'Keep it going!'}</div>
+            </div>
+            <div style={{background:'var(--white)',borderRadius:16,padding:16,border:'1px solid var(--border)'}}>
+              <div style={{fontSize:28,marginBottom:6}}>⚡</div>
+              <div style={{fontSize:28,fontWeight:900,color:effScore===null?'var(--gray)':effScore>=80?'#16A34A':effScore>=50?'#D97706':'#DC2626'}}>
+                {effScore===null?'—':`${effScore}%`}
+              </div>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginTop:2}}>fridge efficiency</div>
+              <div style={{fontSize:10,color:'var(--gray)',marginTop:4}}>
+                {effScore===null?'Mark items as eaten to track':effScore>=80?'Excellent — almost no waste':effScore>=50?'Room to improve':'Try using expiring items first'}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Cooking personality ── */}
+          {personality&&(
+            <div style={{background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)',border:'1px solid #BFDBFE',borderRadius:16,padding:16,marginBottom:12,display:'flex',alignItems:'center',gap:14}}>
+              <div style={{fontSize:36,flexShrink:0}}>{personality.emoji}</div>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.5,marginBottom:3}}>YOUR COOKING PERSONALITY</div>
+                <div style={{fontSize:16,fontWeight:900,color:'var(--navy)'}}>{personality.label}</div>
+                <div style={{fontSize:12,color:'var(--inkM)',marginTop:3}}>{personality.desc}</div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Waste watch ── */}
+          <div style={{background:'var(--white)',borderRadius:16,padding:16,marginBottom:12,border:'1px solid var(--border)'}}>
+            <p style={{fontSize:13,fontWeight:800,color:'var(--ink)',marginBottom:12}}>🗑 Waste Watch</p>
+            {wasteLog.length===0?(
+              <p style={{fontSize:13,color:'var(--gray)',textAlign:'center',padding:'8px 0'}}>No waste recorded yet — great start!</p>
+            ):(
+              <>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+                  <div>
+                    <div style={{fontSize:11,color:'var(--gray)'}}>thrown away this month</div>
+                    <div style={{fontSize:22,fontWeight:900,color:'#DC2626'}}>₹{wasteCost.toLocaleString()}</div>
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:11,color:'var(--gray)'}}>items wasted</div>
+                    <div style={{fontSize:22,fontWeight:900,color:'#DC2626'}}>{wasteThisMonth.length}</div>
+                  </div>
+                </div>
+                {worstItem&&(
+                  <div style={{background:'#FEF2F2',border:'1px solid #FCA5A5',borderRadius:12,padding:'10px 14px',display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:24}}>{worstItem[1].emoji}</span>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:800,color:'#B91C1C'}}>{worstItem[0]} goes to waste most</div>
+                      <div style={{fontSize:11,color:'#DC2626',marginTop:2}}>Wasted {worstItem[1].count}×  — try buying less or using it earlier</div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ── Recently cooked ── */}
           {cookLog.length>0&&(
-            <div className="card" style={{marginBottom:12}}>
-              <p style={{fontWeight:800,fontSize:15,color:'var(--ink)',marginBottom:12}}>Recently cooked</p>
-              {cookLog.slice(0,5).map(l=>(
-                <div key={l.id} style={{display:'flex',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+            <div style={{background:'var(--white)',borderRadius:16,padding:16,marginBottom:12,border:'1px solid var(--border)'}}>
+              <p style={{fontSize:13,fontWeight:800,color:'var(--ink)',marginBottom:12}}>✅ Recently cooked</p>
+              {cookLog.slice(0,5).map((l,i,arr)=>(
+                <div key={l.id} style={{display:'flex',alignItems:'center',padding:'8px 0',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
                   <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>{l.name}</div><div style={{fontSize:11,color:'var(--gray)'}}>{l.period} · {new Date(l.date).toLocaleDateString()}</div></div>
-                  <span style={{fontSize:18}}>✅</span>
+                  <span style={{fontSize:16}}>🍽️</span>
                 </div>
               ))}
             </div>
           )}
-          {/* Spending by category */}
-          {total>0&&(
-            <div className="card" style={{marginBottom:12}}>
-              <p style={{fontWeight:800,fontSize:15,color:'var(--ink)',marginBottom:12}}>Pantry by category</p>
-              {Object.entries(cats).map(([cat,amt])=>(
-                <div key={cat} style={{marginBottom:10}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                    <span style={{fontSize:12,color:'var(--inkM)'}}>{cat}</span>
-                    <span style={{fontSize:12,fontWeight:700,color:'var(--ink)'}}>₹{amt}</span>
-                  </div>
-                  <div style={{height:6,background:'var(--grayL)',borderRadius:3}}>
-                    <div style={{height:6,width:`${Math.min(100,Math.round(amt/total*100))}%`,background:'var(--navy)',borderRadius:3}}/>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+
           {!isPremium&&(
             <button onClick={()=>setShowPremium(true)} style={{width:'100%',background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #F59E0B',borderRadius:16,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
               <div style={{width:40,height:40,borderRadius:20,background:'#F59E0B',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>👑</div>
-              <div style={{textAlign:'left'}}><div style={{fontWeight:800,fontSize:14,color:'#92400E'}}>Upgrade to Premium</div><div style={{fontSize:12,color:'#B45309',marginTop:2}}>Full analytics, email sync, 7-day planning</div></div>
+              <div style={{textAlign:'left'}}><div style={{fontWeight:800,fontSize:14,color:'#92400E'}}>Unlock full insights</div><div style={{fontSize:12,color:'#B45309',marginTop:2}}>Weekly trends, spending by store, 30-day waste report</div></div>
             </button>
           )}
         </div>
