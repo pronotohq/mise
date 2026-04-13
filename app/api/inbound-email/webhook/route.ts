@@ -127,6 +127,8 @@ const SENDER_REGIONS: Record<string, { currency: string; region: string; weightU
   'fairprice.com.sg': { currency: 'SGD', region: 'SG', weightUnit: 'g' },
   'grab.com':         { currency: 'SGD', region: 'SG', weightUnit: 'g' },
   'foodpanda.sg':     { currency: 'SGD', region: 'SG', weightUnit: 'g' },
+  'foodpanda.com':    { currency: 'SGD', region: 'SG', weightUnit: 'g' }, // pandamart / all markets
+  'pandamart.com':    { currency: 'SGD', region: 'SG', weightUnit: 'g' },
   'amazon.sg':        { currency: 'SGD', region: 'SG', weightUnit: 'g' },
   'instacart.com':    { currency: 'USD', region: 'US', weightUnit: 'lbs' },
   'amazon.com':       { currency: 'USD', region: 'US', weightUnit: 'lbs' },

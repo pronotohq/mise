@@ -1308,15 +1308,15 @@ export default function App() {
                       <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'2px 6px',flexShrink:0}}>Setup</span>
                     )}
                   </button>
-                  {/* Universal forward address */}
-                  <button onClick={async()=>{const e=await getOrCreateSyncEmail();if(e){await navigator.clipboard.writeText(e).catch(()=>{});showToast('📋 Sync address copied!');setTab('profile');setShowSyncSetup(true);}}}
-                    style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'11px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-                    <div style={{width:38,height:38,borderRadius:19,background:'#0EA5E9',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>✉️</div>
+                  {/* Auto-sync setup */}
+                  <button onClick={async()=>{const e=await getOrCreateSyncEmail();if(e){setTab('profile');setShowSyncSetup(true);}}}
+                    style={{width:'100%',background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)',border:'1.5px solid #BFDBFE',borderRadius:14,padding:'11px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                    <div style={{width:38,height:38,borderRadius:12,background:'#0EA5E9',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>🔄</div>
                     <div style={{flex:1,textAlign:'left'}}>
-                      <div style={{fontSize:13,fontWeight:800,color:'var(--ink)'}}>Forward-to sync</div>
-                      <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Works with any email app globally</div>
+                      <div style={{fontSize:13,fontWeight:800,color:'var(--navy)'}}>Order → Fridge (auto)</div>
+                      <div style={{fontSize:11,color:'#3B82F6',marginTop:1}}>Set up once · FoodPanda, Grab, Swiggy sync forever</div>
                     </div>
-                    <span style={{fontSize:11,background:'#0EA5E9',color:'#fff',borderRadius:6,padding:'2px 7px',flexShrink:0}}>All regions</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
                   </button>
                 </div>
               )
@@ -1941,18 +1941,18 @@ export default function App() {
           ))}
         </div>
 
-        {/* ── Email Auto-Sync Settings ── */}
+        {/* ── Order-to-Fridge Auto-Sync ── */}
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:18,marginBottom:14,overflow:'hidden'}}>
           {/* Header */}
           <div onClick={()=>{setShowSyncSetup(v=>!v); if(!syncEmail) getOrCreateSyncEmail(); else refreshSyncStatus();}}
             style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer'}}>
-            <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,#6366F1,#4F46E5)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>📧</div>
+            <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,#0EA5E9,#0284C7)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔄</div>
             <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Email Auto-Sync</div>
-              <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>
+              <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Order → Fridge Auto-Sync</div>
+              <div style={{fontSize:11,color:syncLog.length>0?'#15803D':'var(--gray)',marginTop:1,fontWeight:syncLog.length>0?700:400}}>
                 {syncLog.length>0
-                  ? `Last sync: ${new Date(syncLog[0].syncedAt).toLocaleDateString()} · ${syncLog[0].count} items from ${syncLog[0].store}`
-                  : syncEmail ? 'Waiting for first order email…' : 'Forward order emails → auto-add to fridge'}
+                  ? `✓ Last synced ${new Date(syncLog[0].syncedAt).toLocaleDateString()} · ${syncLog[0].count} items from ${syncLog[0].store}`
+                  : syncEmail ? '⏳ Ready — waiting for your first order' : 'Order on FoodPanda, close the app. Done.'}
               </div>
             </div>
             {syncLog.length>0 && <div style={{width:8,height:8,borderRadius:4,background:'#22C55E',flexShrink:0}}/>}
@@ -1961,45 +1961,105 @@ export default function App() {
 
           {showSyncSetup&&(
             <div style={{borderTop:'1px solid var(--border)',padding:'16px'}}>
-              {/* Your unique sync email */}
-              <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:8}}>YOUR UNIQUE SYNC ADDRESS</p>
+
+              {/* Hero explanation */}
+              <div style={{background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)',border:'1.5px solid #BFDBFE',borderRadius:14,padding:14,marginBottom:16}}>
+                <p style={{fontSize:13,fontWeight:800,color:'var(--navy)',marginBottom:8}}>How it works</p>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {[
+                    ['🛒','You order on FoodPanda / GrabMart / Swiggy'],
+                    ['📧','They send you a confirmation email (automatically)'],
+                    ['⚡','Gmail forwards it to FreshNudge (automatically, forever)'],
+                    ['🧊','Items appear in your fridge — no action needed'],
+                  ].map(([ic,txt])=>(
+                    <div key={txt} style={{display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{fontSize:16,flexShrink:0}}>{ic}</span>
+                      <span style={{fontSize:12,color:'var(--inkM)'}}>{txt}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #BFDBFE',display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:13}}>⏱</span>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--navy)'}}>One-time setup · 2 minutes · works forever after</span>
+                </div>
+              </div>
+
+              {/* Step 1 — get sync address */}
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                <div style={{width:20,height:20,borderRadius:10,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,flexShrink:0}}>1</div>
+                <p style={{fontSize:12,fontWeight:800,color:'var(--ink)'}}>Your unique FreshNudge address</p>
+              </div>
               {syncLoading?(
-                <div style={{background:'var(--grayL)',borderRadius:12,padding:14,textAlign:'center',color:'var(--gray)',fontSize:13}}>Generating your address…</div>
+                <div style={{background:'var(--grayL)',borderRadius:12,padding:14,textAlign:'center',color:'var(--gray)',fontSize:13,marginBottom:16}}>Generating…</div>
               ) : syncEmail ? (
-                <div style={{background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:12,padding:'10px 12px',display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
-                  <div style={{flex:1,fontSize:12,fontWeight:700,color:'var(--navy)',wordBreak:'break-all',fontFamily:'monospace'}}>{syncEmail}</div>
-                  <button onClick={copySyncEmail} style={{background:copied?'#22C55E':'var(--navy)',border:'none',borderRadius:8,padding:'7px 12px',fontSize:11,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,transition:'background .2s'}}>
+                <div style={{background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:12,padding:'10px 12px',display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+                  <div style={{flex:1,fontSize:11,fontWeight:700,color:'var(--navy)',wordBreak:'break-all',fontFamily:'monospace'}}>{syncEmail}</div>
+                  <button onClick={copySyncEmail} style={{background:copied?'#22C55E':'var(--navy)',border:'none',borderRadius:8,padding:'7px 12px',fontSize:11,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,transition:'background .2s',whiteSpace:'nowrap'}}>
                     {copied?'✓ Copied':'Copy'}
                   </button>
                 </div>
               ) : (
-                <button onClick={getOrCreateSyncEmail} style={{width:'100%',background:'var(--navy)',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>
-                  Generate my sync address →
+                <button onClick={getOrCreateSyncEmail} style={{width:'100%',background:'var(--navy)',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',marginBottom:16}}>
+                  Generate my address →
                 </button>
               )}
 
-              {/* Setup guide */}
-              <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:8}}>HOW TO SET UP (2 MINUTES)</p>
-              {[
-                ['1','Get your address above','Tap Copy to copy your unique FreshNudge email'],
-                ['2','Open Gmail / Outlook','Go to Settings → Filters → Create new filter'],
-                ['3','Set filter rule','From: swiggy.com OR blinkit.com OR foodpanda.sg (or your local apps)'],
-                ['4','Action: Forward to','Paste your FreshNudge sync address. Done!'],
-              ].map(([n,title,desc])=>(
-                <div key={n} style={{display:'flex',gap:10,marginBottom:10}}>
-                  <div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:900,flexShrink:0}}>{n}</div>
-                  <div><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{title}</div><div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{desc}</div></div>
+              {/* Step 2 — set up Gmail filter */}
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                <div style={{width:20,height:20,borderRadius:10,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,flexShrink:0}}>2</div>
+                <p style={{fontSize:12,fontWeight:800,color:'var(--ink)'}}>Create a Gmail auto-forward filter</p>
+              </div>
+              <div style={{background:'#F8FAFC',border:'1.5px solid var(--border)',borderRadius:12,padding:12,marginBottom:10}}>
+                <p style={{fontSize:11,color:'var(--gray)',marginBottom:8}}>In Gmail: Settings (⚙️) → See all settings → Filters → Create new filter</p>
+                <div style={{background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'var(--gray)',marginBottom:3}}>FILTER — From field:</p>
+                  <p style={{fontSize:11,fontFamily:'monospace',color:'var(--navy)',wordBreak:'break-all',lineHeight:1.6}}>
+                    {region.groceryApps[0]?.includes('FoodPanda')||region.groceryApps[0]?.includes('Grab')
+                      ? 'foodpanda.sg OR grab.com OR redmart.com'
+                      : region.groceryApps[0]?.includes('Swiggy')||region.groceryApps[0]?.includes('Blinkit')
+                      ? 'swiggy.com OR blinkit.com OR zeptonow.com OR bigbasket.com'
+                      : region.groceryApps[0]?.includes('Instacart')
+                      ? 'instacart.com OR amazon.com OR doordash.com'
+                      : 'foodpanda.sg OR grab.com OR swiggy.com OR blinkit.com'}
+                  </p>
                 </div>
-              ))}
+                <div style={{background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'var(--gray)',marginBottom:3}}>FILTER — Subject contains:</p>
+                  <p style={{fontSize:11,fontFamily:'monospace',color:'var(--navy)'}}>order OR delivered OR confirmation OR receipt</p>
+                </div>
+                <div style={{background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:8,padding:'8px 10px'}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'#15803D',marginBottom:3}}>ACTION — Forward to:</p>
+                  <p style={{fontSize:11,fontFamily:'monospace',color:'#15803D',wordBreak:'break-all'}}>{syncEmail||'(generate your address first)'}</p>
+                </div>
+              </div>
+              <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noreferrer"
+                style={{display:'block',width:'100%',background:'linear-gradient(135deg,#4285F4,#1a73e8)',border:'none',borderRadius:12,padding:'11px 0',fontSize:13,fontWeight:800,color:'#fff',cursor:'pointer',textAlign:'center',textDecoration:'none',marginBottom:16,boxSizing:'border-box'}}>
+                Open Gmail Filters →
+              </a>
 
-              {/* Supported apps by region */}
+              {/* Supported apps */}
               <div style={{background:'var(--grayL)',borderRadius:12,padding:'10px 12px',marginBottom:12}}>
-                <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginBottom:6}}>WORKS WITH</p>
-                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
-                  {[['🇮🇳','Blinkit, Swiggy, Zepto, BigBasket'],['🇸🇬','FoodPanda, GrabMart, RedMart, NTUC'],['🇺🇸','Instacart, Amazon Fresh, Walmart'],['🇬🇧','Ocado, Tesco, Sainsbury\'s'],['🇦🇺','Woolworths, Coles']].map(([flag,apps])=>(
-                    <div key={flag} style={{fontSize:11,color:'var(--inkM)'}}><span>{flag}</span> {apps}</div>
-                  ))}
-                </div>
+                <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginBottom:8}}>WORKS WITH THESE APPS</p>
+                {[
+                  {flag:'🇸🇬',apps:['FoodPanda','GrabMart','RedMart','NTUC FairPrice','Amazon SG']},
+                  {flag:'🇮🇳',apps:['Blinkit','Swiggy Instamart','Zepto','BigBasket','Amazon IN']},
+                  {flag:'🇺🇸',apps:['Instacart','Amazon Fresh','Walmart','DoorDash']},
+                  {flag:'🇬🇧',apps:['Ocado','Tesco','Sainsbury\'s']},
+                  {flag:'🇦🇺',apps:['Woolworths','Coles']},
+                ].map(({flag,apps})=>(
+                  <div key={flag} style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:6}}>
+                    <span style={{fontSize:14,flexShrink:0}}>{flag}</span>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+                      {apps.map(a=><span key={a} style={{fontSize:10,background:'var(--white)',border:'1px solid var(--border)',borderRadius:8,padding:'2px 7px',color:'var(--inkM)',fontWeight:600}}>{a}</span>)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Privacy note */}
+              <div style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:12}}>
+                <span style={{fontSize:14,flexShrink:0}}>🔒</span>
+                <p style={{fontSize:11,color:'var(--gray)',lineHeight:1.6}}>Your email is <strong>deleted immediately</strong> after we extract item names and prices. We never store email content, subjects, or sender details.</p>
               </div>
 
               {/* Recent sync log */}
@@ -2008,9 +2068,9 @@ export default function App() {
                   <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:8}}>RECENT SYNCS</p>
                   {syncLog.slice(0,5).map((s,i)=>(
                     <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<Math.min(syncLog.length,5)-1?'1px solid var(--border)':'none'}}>
-                      <div style={{width:32,height:32,borderRadius:8,background:'#F0FDF4',border:'1px solid #86EFAC',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0}}>📦</div>
+                      <span style={{fontSize:20}}>📦</span>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:12,fontWeight:700,color:'var(--ink)'}}>{s.store} · {s.count} items</div>
+                        <div style={{fontSize:12,fontWeight:700,color:'var(--ink)'}}>{s.store} · {s.count} items added</div>
                         <div style={{fontSize:10,color:'var(--gray)'}}>{s.items?.slice(0,3).join(', ')}{(s.items?.length||0)>3?` +${s.items.length-3} more`:''}</div>
                       </div>
                       <div style={{fontSize:10,color:'var(--gray)',flexShrink:0}}>{new Date(s.syncedAt).toLocaleDateString()}</div>
