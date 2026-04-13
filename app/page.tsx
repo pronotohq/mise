@@ -207,7 +207,7 @@ export default function App() {
   };
 
   // ── Onboarding ──────────────────────────────────────────────────
-  const OB_STEPS = ['welcome','name','family','diet','sources','notifications','done'];
+  const OB_STEPS = ['welcome','family','name','diet','sources','notifications','payment','done'];
   const obPct = Math.round(((obStep+1)/OB_STEPS.length)*100);
 
   const completeOnboarding = () => {
@@ -432,46 +432,17 @@ export default function App() {
 
         {step==='name'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What&apos;s your name?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>We&apos;ll personalise everything for you.</p>
+            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What should we call you?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>Every suggestion will feel like it&apos;s made just for you.</p>
             <input type="text" value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
-              placeholder="Your first name" style={{width:'100%',marginBottom:20,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
-            <p style={{fontSize:13,fontWeight:700,color:'var(--gray)',marginBottom:8}}>Your city</p>
-            <div style={{position:'relative',marginBottom:10}}>
-              <input type="text" value={profile.city}
-                onChange={e=>setProfile(p=>({...p,city:e.target.value}))}
-                placeholder="Type your city…"
-                style={{width:'100%',border:'2px solid var(--border)',borderRadius:12,padding:'11px 44px 11px 14px',fontSize:14,fontWeight:600,color:'var(--ink)',background:'#fff',boxSizing:'border-box'}}/>
-              <button onClick={()=>{
-                if(!navigator.geolocation){return;}
-                navigator.geolocation.getCurrentPosition(async pos=>{
-                  try{
-                    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
-                    const d=await r.json();
-                    const c=d.address?.city||d.address?.town||d.address?.village||d.address?.county||'';
-                    if(c) setProfile(p=>({...p,city:c}));
-                  }catch{}
-                },()=>{});
-              }} title="Detect my location"
-                style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:20,lineHeight:1,padding:0}}>
-                📍
-              </button>
-            </div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-              {['Mumbai','Delhi','Bangalore','London','New York','Dubai','Singapore','Sydney','Toronto','Lagos','Nairobi','São Paulo'].map(c=>(
-                <div key={c} onClick={()=>setProfile(p=>({...p,city:c}))}
-                  style={{background:profile.city===c?'#EFF6FF':'var(--surface)',border:`1.5px solid ${profile.city===c?'var(--navy)':'var(--border)'}`,borderRadius:20,padding:'5px 12px',fontSize:12,fontWeight:profile.city===c?700:500,color:profile.city===c?'var(--navy)':'var(--ink)',cursor:'pointer',whiteSpace:'nowrap'}}>
-                  {c}
-                </div>
-              ))}
-            </div>
+              placeholder="Your first name" style={{width:'100%',border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
           </div>
         )}
 
         {step==='family'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>Who are you<br/>cooking for?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Every recipe adapts to your family.</p>
+            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>Set the table.</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Portions, ingredients, everything scales to your household.</p>
             <div style={{marginBottom:14}}>
               <p style={{fontSize:13,fontWeight:700,color:'var(--gray)',marginBottom:8}}>Family size</p>
               <div style={{display:'flex',gap:8}}>
@@ -557,6 +528,33 @@ export default function App() {
           </div>
         )}
 
+        {step==='payment'&&(
+          <div style={{flex:1,padding:'28px 22px',display:'flex',flexDirection:'column'}}>
+            <div style={{textAlign:'center',marginBottom:24}}>
+              <div style={{fontSize:44,marginBottom:8}}>✨</div>
+              <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>Try FreshNudge free<br/>for 7 days</h2>
+              <p style={{fontSize:13,color:'var(--gray)'}}>No credit card needed. Cancel anytime.</p>
+            </div>
+            {[['🍽️ Daily meal suggestions','Based on what\'s in your fridge'],['🎙️ Voice grocery logging','Add items by talking'],['⚠️ Expiry alerts','Never waste food again'],['👶 Toddler safety filter','Every recipe checked automatically']].map(([feat,sub])=>(
+              <div key={feat} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--ink)',flex:1}}>{feat}<div style={{fontSize:11,color:'var(--gray)',fontWeight:500,marginTop:2}}>{sub}</div></div>
+                <span style={{color:'#22C55E',fontWeight:900,fontSize:18}}>✓</span>
+              </div>
+            ))}
+            <div style={{marginTop:20,background:'linear-gradient(135deg,#1E3A8A,#2563EB)',borderRadius:16,padding:20,textAlign:'center'}}>
+              <div style={{fontSize:11,color:'#93C5FD',fontWeight:600,marginBottom:4,letterSpacing:1,textTransform:'uppercase'}}>After free trial</div>
+              <div style={{fontSize:32,fontWeight:900,color:'#fff'}}>₹299<span style={{fontSize:14,fontWeight:500,opacity:.8}}>/month</span></div>
+              <div style={{fontSize:11,color:'#93C5FD',marginTop:2}}>≈ the cost of one takeaway order</div>
+            </div>
+            <button className="btn-primary" onClick={()=>setObStep(s=>s+1)} style={{marginTop:16,fontSize:16,padding:16,background:'#22C55E'}}>
+              Start 7-day free trial →
+            </button>
+            <button onClick={()=>setObStep(s=>s+1)} style={{marginTop:10,background:'none',border:'none',color:'var(--gray)',fontSize:13,cursor:'pointer',fontFamily:'inherit',padding:8}}>
+              Continue with free plan
+            </button>
+          </div>
+        )}
+
         {step==='done'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
             <div style={{textAlign:'center',marginBottom:28}}>
@@ -565,7 +563,7 @@ export default function App() {
               <p style={{fontSize:13,color:'var(--gray)',marginTop:6}}>Your kitchen now thinks for itself.</p>
             </div>
             <div className="card" style={{marginBottom:24}}>
-              {[['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety filter ON`:''}`],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['📍','City',profile.city],['🔔','Notifications','All 4 meal periods set']].map(([ic,lb,val],i,arr)=>(
+              {[['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety filter ON`:''}`],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['🔔','Notifications','All 4 meal periods set']].map(([ic,lb,val],i,arr)=>(
                 <div key={lb} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
                   <div style={{width:34,height:34,borderRadius:10,background:'var(--grayL)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{ic}</div>
                   <div style={{flex:1}}><div style={{fontSize:11,color:'var(--gray)'}}>{lb}</div><div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>{val}</div></div>
@@ -577,7 +575,7 @@ export default function App() {
           </div>
         )}
 
-        {obStep<OB_STEPS.length-1&&step!=='welcome'&&(
+        {obStep<OB_STEPS.length-1&&step!=='welcome'&&step!=='payment'&&(
           <div style={{padding:'16px 22px',paddingBottom:'max(16px,env(safe-area-inset-bottom))'}}>
             <button className="btn-primary" onClick={()=>setObStep(s=>s+1)}>Next →</button>
           </div>
@@ -950,7 +948,7 @@ export default function App() {
         )}
         {/* Profile summary */}
         <div className="card" style={{marginBottom:14}}>
-          {[['👤','Name',profile.name||'—'],['📍','City',profile.city],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety ON`:''}`]].map(([ic,lb,val],i,arr)=>(
+          {[['👤','Name',profile.name||'—'],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety ON`:''}`]].map(([ic,lb,val],i,arr)=>(
             <div key={lb} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
               <div style={{width:34,height:34,borderRadius:10,background:'var(--grayL)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{ic}</div>
               <div style={{flex:1}}><div style={{fontSize:11,color:'var(--gray)'}}>{lb}</div><div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>{val}</div></div>
