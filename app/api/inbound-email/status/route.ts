@@ -26,7 +26,7 @@ import path from 'path';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface SyncLogEntry {
+interface SyncLogEntry {
   store: string;
   count: number;
   syncedAt: string;
@@ -48,7 +48,7 @@ const SYNC_LOG_FILE = path.join(DATA_DIR, 'sync-log.json');
 // Helpers
 // ---------------------------------------------------------------------------
 
-export async function readSyncLog(): Promise<SyncLogFile> {
+async function readSyncLog(): Promise<SyncLogFile> {
   try {
     const raw = await fs.readFile(SYNC_LOG_FILE, 'utf-8');
     return JSON.parse(raw) as SyncLogFile;
@@ -57,7 +57,7 @@ export async function readSyncLog(): Promise<SyncLogFile> {
   }
 }
 
-export async function writeSyncLog(data: SyncLogFile): Promise<void> {
+async function writeSyncLog(data: SyncLogFile): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(SYNC_LOG_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
@@ -65,7 +65,7 @@ export async function writeSyncLog(data: SyncLogFile): Promise<void> {
 /**
  * Append a new entry to the sync log for a user, keeping at most `maxEntries`.
  */
-export async function appendSyncLog(
+async function appendSyncLog(
   userId: string,
   entry: SyncLogEntry,
   maxEntries = 10,

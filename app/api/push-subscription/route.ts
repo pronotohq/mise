@@ -26,7 +26,7 @@ import path from 'path';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface StoredPushSubscription {
+interface StoredPushSubscription {
   endpoint: string;
   keys: {
     p256dh: string;
@@ -49,7 +49,7 @@ const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'push-subscriptions.json');
 // Helpers
 // ---------------------------------------------------------------------------
 
-export async function readSubscriptions(): Promise<PushSubscriptionsFile> {
+async function readSubscriptions(): Promise<PushSubscriptionsFile> {
   try {
     const raw = await fs.readFile(SUBSCRIPTIONS_FILE, 'utf-8');
     return JSON.parse(raw) as PushSubscriptionsFile;
