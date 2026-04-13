@@ -174,9 +174,12 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [actionItem, setActionItem] = useState<PantryItem|null>(null);
   const [scanning,  setScanning]  = useState(false);
-  const [showEmail, setShowEmail] = useState(false);
-  const [emailText, setEmailText] = useState('');
+  const [showEmail,    setShowEmail]    = useState(false);
+  const [emailText,    setEmailText]    = useState('');
   const [emailLoading, setEmailLoading] = useState(false);
+  const [gmailToken,   setGmailToken]   = useState('');
+  const [gmailSyncing, setGmailSyncing] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(false);
   const photoInputRef = useRef<HTMLInputElement|null>(null);
   const recognitionRef = useRef<unknown>(null);
@@ -299,12 +302,69 @@ export default function App() {
     finally { setEmailLoading(false); }
   };
 
+  // ── Gmail OAuth + auto-sync ──────────────────────────────────────
+  const connectGmail = () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) { showToast('Gmail sync not configured yet'); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const google = (window as any).google;
+    if (!google?.accounts?.oauth2) { showToast('Google sign-in not loaded'); return; }
+
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/gmail.readonly',
+      callback: async (resp: { access_token?: string; error?: string }) => {
+        if (resp.error || !resp.access_token) {
+          showToast('Gmail connection failed'); return;
+        }
+        setGmailToken(resp.access_token);
+        setGmailConnected(true);
+        showToast('✅ Gmail connected — syncing orders…');
+        await syncGmailOrders(resp.access_token);
+      },
+    });
+    client.requestAccessToken();
+  };
+
+  const syncGmailOrders = async (token: string) => {
+    setGmailSyncing(true);
+    try {
+      // Sync from the date the user first used the app (or 60 days back)
+      const saved = JSON.parse(localStorage.getItem('mise_v1') || '{}');
+      const sinceDate = saved.joinDate || new Date(Date.now() - 60 * 86400000).toISOString();
+
+      const res  = await fetch('/api/gmail-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: token,
+          dietary: { isVeg: profile.isVeg, eatsEggs: profile.eatsEggs },
+          sinceDate,
+        }),
+      });
+      const data = await res.json();
+      if (data.items?.length) {
+        addItems(data.items);
+        const storeList = data.stores?.join(', ') || 'your orders';
+        showToast(`📧 Added ${data.items.length} items from ${storeList}`);
+      } else {
+        showToast(`Scanned ${data.emailsScanned ?? 0} emails — no new grocery orders found`);
+      }
+    } catch { showToast('Gmail sync failed'); }
+    finally { setGmailSyncing(false); }
+  };
+
   // ── Onboarding ──────────────────────────────────────────────────
   const OB_STEPS = ['welcome','family','name','diet','sources','notifications','payment','done'];
   const obPct = Math.round(((obStep+1)/OB_STEPS.length)*100);
 
   const completeOnboarding = () => {
     setOnboardingDone(true);
+    // Record join date for Gmail sync lookback
+    try {
+      const cur = JSON.parse(localStorage.getItem('mise_v1')||'{}');
+      if (!cur.joinDate) localStorage.setItem('mise_v1', JSON.stringify({...cur, joinDate: new Date().toISOString()}));
+    } catch{}
     // Seed demo pantry
     const demo: PantryItem[] = [
       {id:uid(),name:'Spinach',  emoji:'🥬',cat:'Produce',qty:200,unit:'g',price:49, expiry:expiryDate(0),expDays:0,src:'🎙️'},
@@ -648,7 +708,7 @@ export default function App() {
             <div style={{marginTop:20,background:'linear-gradient(135deg,#1E3A8A,#2563EB)',borderRadius:16,padding:20,textAlign:'center'}}>
               <div style={{fontSize:11,color:'#93C5FD',fontWeight:600,marginBottom:4,letterSpacing:1,textTransform:'uppercase'}}>After free trial</div>
               <div style={{fontSize:32,fontWeight:900,color:'#fff'}}>{region.monthlyPrice}<span style={{fontSize:14,fontWeight:500,opacity:.8}}>/month</span></div>
-              <div style={{fontSize:11,color:'#93C5FD',marginTop:2}}>≈ the cost of one {region.groceryApps[0]} order</div>
+              <div style={{fontSize:11,color:'#93C5FD',marginTop:2}}>Less than 10% of one {region.groceryApps[0]} order</div>
             </div>
             <button className="btn-primary" onClick={()=>setObStep(s=>s+1)} style={{marginTop:16,fontSize:16,padding:16,background:'#22C55E'}}>
               Start 7-day free trial →
@@ -739,14 +799,30 @@ export default function App() {
               </div>
             </button>
 
-            {/* Email sync */}
+            {/* Gmail auto-sync */}
+            {gmailConnected ? (
+              <button onClick={()=>syncGmailOrders(gmailToken)} disabled={gmailSyncing}
+                style={{width:'100%',background:'#F0FDF4',border:'1.5px solid #86EFAC',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',opacity:gmailSyncing?.7:1}}>
+                <div style={{width:42,height:42,borderRadius:21,background:'#22C55E',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+                <div style={{textAlign:'left'}}>
+                  <div style={{fontSize:14,fontWeight:800,color:'#15803D'}}>{gmailSyncing?'Syncing orders…':'✅ Gmail connected'}</div>
+                  <div style={{fontSize:11,color:'#16A34A',marginTop:1}}>{gmailSyncing?'Reading your order emails…':'Tap to re-sync grocery orders'}</div>
+                </div>
+              </button>
+            ) : (
+              <button onClick={connectGmail}
+                style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+                <div style={{textAlign:'left'}}>
+                  <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Connect Gmail</div>
+                  <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Auto-import FoodPanda, Grab, Swiggy orders</div>
+                </div>
+              </button>
+            )}
+            {/* Fallback: paste email manually */}
             <button onClick={()=>setShowEmail(true)}
-              style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-              <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
-              <div style={{textAlign:'left'}}>
-                <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>📧 Paste order email</div>
-                <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>FoodPanda, GrabMart, Swiggy, Amazon Fresh…</div>
-              </div>
+              style={{width:'100%',marginTop:6,background:'none',border:'none',fontSize:11,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit',padding:'4px',textDecoration:'underline'}}>
+              No Gmail? Paste order email text instead
             </button>
           </div>
         )}
@@ -1276,7 +1352,7 @@ export default function App() {
           ))}
           <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:12,padding:14,marginBottom:16}}>
             <p style={{fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:8}}>💡 The math</p>
-            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One {region.groceryApps[0]} order = {fmt(region.avgTakeout*2)}+. FreshNudge costs <strong>{region.monthlyPrice}</strong>. Skip one delivery and the app pays for itself.</p>
+            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One {region.groceryApps[0]} grocery order typically costs {fmt(region.avgTakeout*2)}+. FreshNudge is <strong>{region.monthlyPrice}</strong> — less than 10% of that. Cook more, order less.</p>
           </div>
         </div>
         <div style={{padding:'12px 22px',paddingBottom:'max(28px,env(safe-area-inset-bottom))'}}>

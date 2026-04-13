@@ -29,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap"
           rel="stylesheet"
         />
+        {/* Google Identity Services — for Gmail OAuth */}
+        <script src="https://accounts.google.com/gsi/client" async defer/>
       </head>
       <body>{children}</body>
     </html>
