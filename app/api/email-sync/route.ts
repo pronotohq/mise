@@ -30,20 +30,23 @@ Return a JSON object with these keys:
 {
   "store": string (app/store name, e.g. "FoodPanda"),
   "orderTotal": number (total order value, 0 if not found),
-  "items": [{ "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }]
+  "currency": string (e.g. "INR", "SGD", "USD", infer from email content),
+  "items": [{ "item_name": string, "quantity": number, "unit": string, "price": number, "category": string, "emoji": string }]
 }
 
 Rules for items:
 - item_name: clean title-case singular (e.g. "Whole Milk", "Free Range Eggs")
 - quantity: numeric (default 1)
 - unit: "g" | "kg" | "ml" | "L" | "pcs" | "loaf" | "bunch" | "packet" | "dozen" | "box"
+- price: per-item price as a number (0 if not found). Extract from the email line item, NOT the total.
 - category: "Produce" | "Dairy" | "Protein" | "Grains" | "Snacks" | "Beverages" | "Condiments" | "Frozen" | "Other"
 - emoji: one relevant emoji
 - Skip delivery fees, tips, packaging charges, discount lines, non-food items
 - If item has a weight/volume in the name (e.g. "Fresh Milk 1L"), extract that as the quantity+unit
 - Diet context: ${dietary?.isVeg ? 'vegetarian' : 'omnivore'}${dietary?.eatsEggs ? ', eats eggs' : ''}
 
-If this email is NOT a grocery order confirmation, return { "store": null, "orderTotal": 0, "items": [] }.`
+IMPORTANT: Accurate prices per item are critical — they are used to calculate food waste costs in the app.
+If this email is NOT a grocery order confirmation, return { "store": null, "orderTotal": 0, "currency": null, "items": [] }.`
       }, {
         role: 'user',
         content: `Extract grocery items from this order email:\n\n${content.slice(0, 6000)}`

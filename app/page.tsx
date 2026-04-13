@@ -94,6 +94,76 @@ const ESSENTIALS: {name:string;emoji:string;cat:string;qty:number;unit:string}[]
   {name:'Atta / Flour',emoji:'🌾',cat:'Pantry',qty:5,unit:'kg'},
 ];
 
+// ── Category-Standard quantity defaults ───────────────────────────
+// Used when voice/scan gives no explicit qty. Priority: history > these > 1pcs
+const CATEGORY_DEFAULTS: Record<string, {qty:number; unit:string}> = {
+  // Root vegetables → weight
+  carrot:   {qty:500, unit:'g'},   potato:  {qty:1,   unit:'kg'},
+  onion:    {qty:500, unit:'g'},   garlic:  {qty:100, unit:'g'},
+  ginger:   {qty:100, unit:'g'},   beetroot:{qty:500, unit:'g'},
+  radish:   {qty:500, unit:'g'},   yam:     {qty:500, unit:'g'},
+  // Leafy greens → bunch
+  spinach:  {qty:1,   unit:'bunch'},kale:   {qty:1,   unit:'bunch'},
+  methi:    {qty:1,   unit:'bunch'},coriander:{qty:1,  unit:'bunch'},
+  mint:     {qty:1,   unit:'bunch'},lettuce:{qty:1,    unit:'bunch'},
+  // Fruit → pcs (standard buy)
+  banana:   {qty:6,   unit:'pcs'}, apple:   {qty:6,  unit:'pcs'},
+  mango:    {qty:4,   unit:'pcs'}, orange:  {qty:4,  unit:'pcs'},
+  tomato:   {qty:4,   unit:'pcs'}, tomatoes:{qty:4,  unit:'pcs'},
+  lemon:    {qty:4,   unit:'pcs'}, grape:   {qty:500,unit:'g'},
+  strawberry:{qty:250,unit:'g'},   papaya:  {qty:1,  unit:'pcs'},
+  // Dairy
+  milk:     {qty:1,   unit:'L'},   doodh:   {qty:1,  unit:'L'},
+  curd:     {qty:400, unit:'g'},   dahi:    {qty:400,unit:'g'},
+  paneer:   {qty:250, unit:'g'},   butter:  {qty:100,unit:'g'},
+  cheese:   {qty:200, unit:'g'},   cream:   {qty:200,unit:'ml'},
+  yogurt:   {qty:400, unit:'g'},   'greek yogurt':{qty:400,unit:'g'},
+  ghee:     {qty:500, unit:'ml'},
+  // Protein
+  egg:      {qty:12,  unit:'pcs'}, eggs:    {qty:12, unit:'pcs'},
+  anda:     {qty:12,  unit:'pcs'}, chicken: {qty:500,unit:'g'},
+  fish:     {qty:500, unit:'g'},   prawn:   {qty:500,unit:'g'},
+  mutton:   {qty:500, unit:'g'},   tofu:    {qty:400,unit:'g'},
+  // Grains / pantry
+  rice:     {qty:1,   unit:'kg'},  oats:    {qty:500,unit:'g'},
+  pasta:    {qty:500, unit:'g'},   bread:   {qty:1,  unit:'loaf'},
+  naan:     {qty:4,   unit:'pcs'}, roti:    {qty:6,  unit:'pcs'},
+  // Beverages
+  juice:    {qty:1,   unit:'L'},   water:   {qty:1,  unit:'L'},
+};
+function getCategoryDefault(name: string): {qty:number; unit:string} {
+  const lc = name.toLowerCase();
+  const keys = Object.keys(CATEGORY_DEFAULTS).sort((a,b)=>b.length-a.length);
+  const match = keys.find(k => lc.includes(k));
+  return match ? CATEGORY_DEFAULTS[match] : {qty:1, unit:'pcs'};
+}
+
+// ── Historical defaulting: mode (most-frequent) qty from past purchases ──
+interface PurchaseRecord { name:string; qty:number; unit:string; }
+function getHistoricalDefault(name: string, history: PurchaseRecord[]): {qty:number;unit:string}|null {
+  const lc = name.toLowerCase();
+  const matches = history.filter(h => h.name.toLowerCase() === lc);
+  if (!matches.length) return null;
+  const freq: Record<string,{qty:number;unit:string;count:number}> = {};
+  matches.forEach(m => {
+    const k = `${m.qty}_${m.unit}`;
+    if (!freq[k]) freq[k] = {qty:m.qty, unit:m.unit, count:0};
+    freq[k].count++;
+  });
+  return Object.values(freq).sort((a,b)=>b.count-a.count)[0];
+}
+
+// ── Qty adjustment step per unit ─────────────────────────────────
+function getQtyStep(unit: string): number {
+  if (['g','ml'].includes(unit)) return 50;
+  if (['kg','L'].includes(unit)) return 0.5;
+  return 1; // pcs, bunch, loaf, etc.
+}
+function fmtQty(qty:number, unit:string): string {
+  const q = qty % 1 === 0 ? qty : qty.toFixed(1);
+  return `${q}${unit==='pcs'?'':' '}${unit}`;
+}
+
 const PERIODS = [
   {id:'breakfast',label:'Breakfast',emoji:'☀️',time:'7–9 AM',color:'#F59E0B',bg:'#FFFBEB',brd:'#FDE68A'},
   {id:'lunch',    label:'Lunch',    emoji:'🌤️',time:'12–2 PM',color:'#22C55E',bg:'#F0FDF4',brd:'#86EFAC'},
@@ -179,6 +249,9 @@ export default function App() {
   const [wasteLog, setWasteLog] = useState<ItemLog[]>([]);
   const [ateLog,   setAteLog]   = useState<ItemLog[]>([]);
   const [isPremium, setIsPremium] = useState(false);
+  const [purchaseHistory, setPurchaseHistory] = useState<PurchaseRecord[]>([]);
+  const [voiceToast, setVoiceToast] = useState<{items:PantryItem[];activeIdx:number}|null>(null);
+  const voiceToastTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
   const [region,    setRegion]    = useState<Region>(DEFAULT_REGION);
   useEffect(()=>{ setRegion(detectRegion()); },[]);
   const fmt = (n:number) => `${region.symbol}${n.toLocaleString(undefined,{maximumFractionDigits:0})}`;
@@ -233,12 +306,13 @@ export default function App() {
         if(d.wasteLog) setWasteLog(d.wasteLog);
         if(d.ateLog)   setAteLog(d.ateLog);
         if(d.isPremium) setIsPremium(true);
+        if(d.purchaseHistory) setPurchaseHistory(d.purchaseHistory);
       }
     } catch{}
   },[]);
 
   // ── Save to localStorage ────────────────────────────────────────
-  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];wasteLog:ItemLog[];ateLog:ItemLog[];isPremium:boolean}>)=>{
+  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];wasteLog:ItemLog[];ateLog:ItemLog[];isPremium:boolean;purchaseHistory:PurchaseRecord[]}>)=>{
     try {
       const current = JSON.parse(localStorage.getItem('mise_v1')||'{}');
       localStorage.setItem('mise_v1', JSON.stringify({...current,...updates}));
@@ -249,6 +323,37 @@ export default function App() {
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(()=>setToast(''),2500);
+  };
+
+  // ── Voice interactive toast ──────────────────────────────────────
+  const showVoiceToast = (items: PantryItem[]) => {
+    if (voiceToastTimer.current) clearTimeout(voiceToastTimer.current);
+    setVoiceToast({items, activeIdx: 0});
+    voiceToastTimer.current = setTimeout(() => setVoiceToast(null), 7000);
+  };
+  const dismissVoiceToast = () => {
+    if (voiceToastTimer.current) clearTimeout(voiceToastTimer.current);
+    setVoiceToast(null);
+  };
+  const adjustVoiceQty = (delta: number) => {
+    if (!voiceToast) return;
+    const item = voiceToast.items[voiceToast.activeIdx];
+    const step = getQtyStep(item.unit);
+    const newQty = Math.max(step, Math.round((item.qty + delta * step) * 100) / 100);
+    setPantry(p => {
+      const updated = p.map(i => i.id === item.id ? {...i, qty: newQty} : i);
+      save({pantry: updated});
+      return updated;
+    });
+    setVoiceToast(vt => vt ? {
+      ...vt, items: vt.items.map(i => i.id === item.id ? {...i, qty: newQty} : i)
+    } : null);
+    if (voiceToastTimer.current) clearTimeout(voiceToastTimer.current);
+    voiceToastTimer.current = setTimeout(() => setVoiceToast(null), 7000);
+  };
+  const cycleVoiceToastItem = () => {
+    if (!voiceToast || voiceToast.items.length <= 1) return;
+    setVoiceToast(vt => vt ? {...vt, activeIdx:(vt.activeIdx+1) % vt.items.length} : null);
   };
 
   // ── Service worker + push notifications ─────────────────────────
@@ -412,29 +517,61 @@ export default function App() {
   };
 
   // ── Add items to pantry ─────────────────────────────────────────
-  const addItems = useCallback((items: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string}[]) => {
+  // opts.interactive = true shows the voice quick-adjust toast
+  const addItems = useCallback((
+    items: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number}[],
+    opts?: {interactive?: boolean; src?: string}
+  ) => {
     const newItems: PantryItem[] = items.map(i=>{
       const days = getShelfDays(i.item_name);
+
+      // Qty resolution: explicit → history mode → category standard → 1pcs
+      let resolvedQty  = i.quantity;
+      let resolvedUnit = i.unit;
+      if (!resolvedQty) {
+        const hist = getHistoricalDefault(i.item_name, purchaseHistory);
+        if (hist) { resolvedQty = hist.qty; resolvedUnit = resolvedUnit ?? hist.unit; }
+        else {
+          const catDef = getCategoryDefault(i.item_name);
+          resolvedQty  = catDef.qty;
+          resolvedUnit = resolvedUnit ?? catDef.unit;
+        }
+      } else if (!resolvedUnit) {
+        resolvedUnit = getCategoryDefault(i.item_name).unit;
+      }
+
       return {
         id: uid(),
         name:    i.item_name,
         emoji:   i.emoji || getEmoji(i.item_name),
         cat:     i.category || 'Other',
-        qty:     i.quantity ?? 1,
-        unit:    i.unit ?? 'pcs',
-        price:   0,
+        qty:     resolvedQty!,
+        unit:    resolvedUnit!,
+        price:   i.price ?? 0,
         expiry:  expiryDate(days),
         expDays: days,
-        src:     '🎙️',
+        src:     opts?.src ?? '🎙️',
       };
     });
+
+    // Persist purchase history for future historical defaulting
+    const newHistory = [...purchaseHistory, ...newItems.map(i=>({name:i.name, qty:i.qty, unit:i.unit}))].slice(-200);
+    setPurchaseHistory(newHistory);
+
     setPantry(p=>{
       const updated = [...newItems, ...p];
-      save({pantry:updated});
+      save({pantry:updated, purchaseHistory:newHistory});
       return updated;
     });
-    showToast(`✅ Added: ${newItems.map(i=>i.name).join(', ')}`);
-  },[save]);
+
+    // Interactive toast for voice; plain toast for scan/email
+    if (opts?.interactive) {
+      showVoiceToast(newItems);
+    } else {
+      showToast(`✅ Added: ${newItems.map(i=>i.name).join(', ')}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[save, purchaseHistory]);
 
   // ── Add kitchen essentials (one-tap) ────────────────────────────
   const addEssentials = () => {
@@ -537,7 +674,7 @@ export default function App() {
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
       if(data.transcript) setVoiceTranscript(data.transcript);
-      if(data.items?.length) addItems(data.items);
+      if(data.items?.length) addItems(data.items, {interactive:true, src:'🎙️'});
       else showToast('Could not parse that — try again');
     } catch { showToast('Voice processing failed'); }
   };
@@ -549,7 +686,7 @@ export default function App() {
       fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs}));
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
-      if(data.items?.length) addItems(data.items);
+      if(data.items?.length) addItems(data.items, {interactive:true, src:'🎙️'});
       else showToast('Nothing recognised — try again');
     } catch { showToast('Parse error'); }
   };
@@ -1673,8 +1810,34 @@ export default function App() {
       {showPremium&&renderPremium()}
       {editExpiry&&renderExpiryEdit()}
 
-      {/* Toast */}
+      {/* Plain toast */}
       {toast&&<div style={{position:'absolute',bottom:100,left:'50%',transform:'translateX(-50%)',background:'#111827',color:'#fff',padding:'10px 18px',borderRadius:24,fontSize:13,fontWeight:700,zIndex:200,whiteSpace:'nowrap',animation:'fadeIn .2s'}}>{toast}</div>}
+
+      {/* Interactive voice toast — "Added 1L Milk  [ − ] [qty] [ + ]" */}
+      {voiceToast&&(()=>{
+        const item = voiceToast.items[voiceToast.activeIdx];
+        const hasMore = voiceToast.items.length > 1;
+        return (
+          <div style={{position:'absolute',bottom:100,left:'50%',transform:'translateX(-50%)',zIndex:201,animation:'fadeIn .25s',display:'flex',alignItems:'center',gap:0,background:'#111827',borderRadius:28,padding:'6px 6px 6px 14px',boxShadow:'0 4px 24px rgba(0,0,0,.35)'}}>
+            {/* Item info — tap to cycle if multiple */}
+            <div onClick={cycleVoiceToastItem} style={{display:'flex',alignItems:'center',gap:7,cursor:hasMore?'pointer':'default',paddingRight:8}}>
+              <span style={{fontSize:20}}>{item.emoji}</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:'#fff',lineHeight:1.2}}>{item.name}</div>
+                <div style={{fontSize:11,color:'#9CA3AF',lineHeight:1}}>{fmtQty(item.qty, item.unit)}{hasMore?` · ${voiceToast.activeIdx+1}/${voiceToast.items.length}`:''}</div>
+              </div>
+            </div>
+            {/* − qty + */}
+            <div style={{display:'flex',alignItems:'center',gap:2,background:'rgba(255,255,255,.1)',borderRadius:20,padding:'4px 6px'}}>
+              <button onClick={()=>adjustVoiceQty(-1)} style={{width:28,height:28,borderRadius:14,background:'rgba(255,255,255,.15)',border:'none',color:'#fff',fontSize:18,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,fontFamily:'inherit'}}>−</button>
+              <span style={{fontSize:13,fontWeight:800,color:'#fff',minWidth:36,textAlign:'center'}}>{fmtQty(item.qty, item.unit)}</span>
+              <button onClick={()=>adjustVoiceQty(+1)} style={{width:28,height:28,borderRadius:14,background:'rgba(255,255,255,.15)',border:'none',color:'#fff',fontSize:18,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,fontFamily:'inherit'}}>+</button>
+            </div>
+            {/* Dismiss */}
+            <button onClick={dismissVoiceToast} style={{width:28,height:28,borderRadius:14,background:'none',border:'none',color:'#6B7280',fontSize:16,cursor:'pointer',marginLeft:4,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

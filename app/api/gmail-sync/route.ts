@@ -72,21 +72,30 @@ function extractBody(payload: Record<string, unknown>): string {
 async function parseEmailItems(
   body: string,
   dietary: Record<string, unknown>
-): Promise<{ item_name: string; quantity: number; unit: string; category: string; emoji: string }[]> {
+): Promise<{ item_name: string; quantity: number; unit: string; price: number; category: string; emoji: string }[]> {
   if (!body.trim() || body.length < 50) return [];
 
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
-    max_tokens: 800,
+    max_tokens: 1000,
     response_format: { type: 'json_object' },
     messages: [{
       role: 'system',
       content: `Extract grocery/food items from a delivery order confirmation email.
-Return JSON: { "items": [{ "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }], "store": string|null }
-Rules: clean title-case names, numeric quantities, units: g/kg/ml/L/pcs/packet/bunch/box/dozen.
-Categories: Produce/Dairy/Protein/Grains/Snacks/Beverages/Condiments/Frozen/Other.
-Skip fees, discounts, packaging, non-food items.
+Return JSON: {
+  "items": [{ "item_name": string, "quantity": number, "unit": string, "price": number, "category": string, "emoji": string }],
+  "store": string|null
+}
+Rules:
+- item_name: clean title-case names
+- quantity: numeric, default 1
+- unit: g/kg/ml/L/pcs/packet/bunch/box/dozen
+- price: per-item price as a number (IMPORTANT: extract from email line items, not totals. Use 0 if not found)
+- category: Produce/Dairy/Protein/Grains/Snacks/Beverages/Condiments/Frozen/Other
+- emoji: one relevant emoji
+- Skip delivery fees, discounts, packaging charges, non-food items
 Diet: ${dietary?.isVeg ? 'vegetarian' : 'omnivore'}${dietary?.eatsEggs ? ', eats eggs' : ''}.
+IMPORTANT: Accurate per-item prices are critical — used to calculate waste cost in the app.
 If not a grocery order, return { "items": [], "store": null }.`,
     }, {
       role: 'user',
