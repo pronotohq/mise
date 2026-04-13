@@ -173,6 +173,12 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState('');
   const [actionItem, setActionItem] = useState<PantryItem|null>(null);
+  const [scanning,  setScanning]  = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
+  const [emailText, setEmailText] = useState('');
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement|null>(null);
   const recognitionRef = useRef<unknown>(null);
   const mediaRecorderRef = useRef<MediaRecorder|null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -207,6 +213,90 @@ export default function App() {
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(()=>setToast(''),2500);
+  };
+
+  // ── Service worker + push notifications ─────────────────────────
+  useEffect(()=>{
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('/sw.js').catch(()=>{});
+    }
+    setNotifEnabled(Notification.permission==='granted');
+  },[]);
+
+  const enableNotifications = async () => {
+    if(!('Notification' in window)) return showToast('Notifications not supported');
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted') return showToast('Notifications blocked — enable in browser settings');
+    setNotifEnabled(true);
+    scheduleNotifications();
+    showToast('✅ Notifications enabled!');
+  };
+
+  const scheduleNotifications = () => {
+    if(!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready.then(reg => {
+      const times: Record<string,string> = profile.notifTimes;
+      const labels: Record<string,string> = {
+        breakfast:'🌅 Breakfast idea ready',
+        lunch:'🌤️ Lunch suggestion from your fridge',
+        snack:'🍎 Snack idea for later',
+        dinner:'🌙 Tonight\'s dinner recommendation',
+      };
+      Object.entries(times).forEach(([meal, timeStr])=>{
+        const [h,m] = timeStr.split(':').map(Number);
+        const now = new Date();
+        const next = new Date(); next.setHours(h,m,0,0);
+        if(next<=now) next.setDate(next.getDate()+1);
+        const delay = next.getTime()-now.getTime();
+        const expiring = pantry.filter(i=>daysLeft(i.expiry)<=1).map(i=>i.name);
+        const body = expiring.length
+          ? `Use ${expiring[0]} before it expires — tap to see what to cook.`
+          : 'Tap to see what to make from your fridge.';
+        reg.active?.postMessage({ type:'SCHEDULE_NOTIF', title: labels[meal]||'FreshNudge 🍳', body, delayMs: delay });
+      });
+    });
+  };
+
+  // ── Photo / receipt scanner ──────────────────────────────────────
+  const handlePhotoScan = async (file: File) => {
+    setScanning(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs}));
+      const res  = await fetch('/api/scan', {method:'POST',body:fd});
+      const data = await res.json();
+      if(data.items?.length){
+        addItems(data.items);
+        showToast(`📸 Added ${data.items.length} items${data.store?` from ${data.store}`:''}`);
+      } else {
+        showToast('Nothing recognised — try a clearer photo');
+      }
+    } catch { showToast('Scan failed — try again'); }
+    finally { setScanning(false); }
+  };
+
+  // ── Email sync ───────────────────────────────────────────────────
+  const handleEmailSync = async () => {
+    if(!emailText.trim()) return;
+    setEmailLoading(true);
+    try {
+      const res  = await fetch('/api/email-sync', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({emailText, dietary:{isVeg:profile.isVeg,eatsEggs:profile.eatsEggs}}),
+      });
+      const data = await res.json();
+      if(data.items?.length){
+        addItems(data.items);
+        setEmailText('');
+        setShowEmail(false);
+        showToast(`✅ Added ${data.items.length} items${data.store?` from ${data.store}`:''}`);
+      } else {
+        showToast('No grocery items found in that email');
+      }
+    } catch { showToast('Email parsing failed'); }
+    finally { setEmailLoading(false); }
   };
 
   // ── Onboarding ──────────────────────────────────────────────────
@@ -534,6 +624,11 @@ export default function App() {
                 <input type="time" value={profile.notifTimes[key as string]} onChange={e=>setProfile(p=>({...p,notifTimes:{...p.notifTimes,[key as string]:e.target.value}}))} style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:10,padding:'7px 10px',fontSize:13,fontWeight:700,color:'var(--navy)',fontFamily:'inherit',cursor:'pointer'}}/>
               </div>
             ))}
+            <button onClick={enableNotifications}
+              style={{width:'100%',marginTop:8,background:notifEnabled?'#DCFCE7':'var(--navy)',border:'none',borderRadius:14,padding:14,fontSize:14,fontWeight:800,color:notifEnabled?'#15803D':'#fff',fontFamily:'inherit',cursor:'pointer'}}>
+              {notifEnabled?'✅ Notifications enabled':'🔔 Enable push notifications'}
+            </button>
+            {notifEnabled&&<p style={{fontSize:11,color:'var(--gray)',textAlign:'center',marginTop:8}}>You&apos;ll get a nudge before each meal with what to cook from your fridge.</p>}
           </div>
         )}
 
@@ -611,24 +706,48 @@ export default function App() {
           </button>
         </div>
 
-        {/* Voice Add Panel */}
+        {/* Add Panel */}
         {showAdd&&(
           <div className="card" style={{marginBottom:12,animation:'fadeIn .2s'}}>
-            <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:12}}>ADD TO FRIDGE BY VOICE</p>
+            <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:12}}>ADD TO FRIDGE</p>
+
+            {/* Voice */}
             <button onClick={startVoice}
-              style={{width:'100%',background:recording?'#FEE2E2':'#EFF6FF',border:`1.5px solid ${recording?'#FCA5A5':'#BFDBFE'}`,borderRadius:14,padding:'16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-              <div style={{width:48,height:48,borderRadius:24,background:recording?'var(--red)':'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'background .2s'}}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
+              style={{width:'100%',background:recording?'#FEE2E2':'#EFF6FF',border:`1.5px solid ${recording?'#FCA5A5':'#BFDBFE'}`,borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10}}>
+              <div style={{width:42,height:42,borderRadius:21,background:recording?'var(--red)':'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
                 </svg>
               </div>
               <div style={{textAlign:'left'}}>
-                <div style={{fontSize:14,fontWeight:800,color:recording?'var(--red)':'var(--navy)'}}>{recording?'Listening…':'Tap to speak'}</div>
-                <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Say what you bought — e.g. &quot;2 mangoes, 400g curd&quot;</div>
+                <div style={{fontSize:14,fontWeight:800,color:recording?'var(--red)':'var(--navy)'}}>{recording?'Listening…':'🎙️ Voice'}</div>
+                <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Say what you bought — &quot;2 mangoes, 400g curd&quot;</div>
               </div>
             </button>
-            {voiceTranscript&&<div style={{marginTop:10,background:'var(--grayL)',borderRadius:12,padding:'11px 14px',fontSize:13,color:'var(--gray)',fontStyle:'italic'}}>🎙️ &ldquo;{voiceTranscript}&rdquo;</div>}
+            {voiceTranscript&&<div style={{marginBottom:10,background:'var(--grayL)',borderRadius:12,padding:'10px 14px',fontSize:13,color:'var(--gray)',fontStyle:'italic'}}>🎙️ &ldquo;{voiceTranscript}&rdquo;</div>}
+
+            {/* Photo scan */}
+            <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{display:'none'}}
+              onChange={e=>{ const f=e.target.files?.[0]; if(f) handlePhotoScan(f); e.target.value=''; }}/>
+            <button onClick={()=>photoInputRef.current?.click()} disabled={scanning}
+              style={{width:'100%',background:scanning?'#F0FDF4':'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10,opacity:scanning?.7:1}}>
+              <div style={{width:42,height:42,borderRadius:21,background:'#22C55E',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📸</div>
+              <div style={{textAlign:'left'}}>
+                <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>{scanning?'Scanning…':'📸 Photo / Receipt'}</div>
+                <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Snap a receipt or grocery app screenshot</div>
+              </div>
+            </button>
+
+            {/* Email sync */}
+            <button onClick={()=>setShowEmail(true)}
+              style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+              <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+              <div style={{textAlign:'left'}}>
+                <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>📧 Paste order email</div>
+                <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>FoodPanda, GrabMart, Swiggy, Amazon Fresh…</div>
+              </div>
+            </button>
           </div>
         )}
 
@@ -694,6 +813,28 @@ export default function App() {
           </>
         )}
       </div>
+
+      {/* Email paste modal */}
+      {showEmail&&(
+        <>
+          <div onClick={()=>setShowEmail(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:50}}/>
+          <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,background:'#fff',borderRadius:'20px 20px 0 0',padding:'20px 20px calc(20px + env(safe-area-inset-bottom))',zIndex:51,boxShadow:'0 -8px 40px rgba(0,0,0,.18)'}}>
+            <div style={{fontWeight:900,fontSize:18,color:'var(--ink)',marginBottom:4}}>📧 Paste order email</div>
+            <p style={{fontSize:12,color:'var(--gray)',marginBottom:14}}>Copy the text from your FoodPanda / GrabMart / Swiggy order confirmation and paste below. We&apos;ll extract every item and add it to your fridge.</p>
+            <textarea value={emailText} onChange={e=>setEmailText(e.target.value)}
+              placeholder="Paste your order confirmation email here…"
+              style={{width:'100%',height:180,border:'1.5px solid var(--border)',borderRadius:12,padding:12,fontSize:13,fontFamily:'inherit',resize:'none',boxSizing:'border-box',color:'var(--ink)'}}/>
+            <div style={{fontSize:11,color:'var(--gray)',marginTop:6,marginBottom:16}}>
+              💡 Tip: Open the order email → Select All → Copy → Paste here
+            </div>
+            <button onClick={handleEmailSync} disabled={emailLoading||!emailText.trim()}
+              style={{width:'100%',background:'#6366F1',border:'none',borderRadius:14,padding:15,fontSize:15,fontWeight:800,color:'#fff',fontFamily:'inherit',cursor:'pointer',marginBottom:10,opacity:emailLoading||!emailText.trim()?.7:1}}>
+              {emailLoading?'Parsing…':'Add to fridge →'}
+            </button>
+            <button onClick={()=>setShowEmail(false)} style={{width:'100%',background:'none',border:'none',color:'var(--gray)',fontSize:13,cursor:'pointer',fontFamily:'inherit',padding:8}}>Cancel</button>
+          </div>
+        </>
+      )}
 
       {/* Item action bottom sheet */}
       {actionItem&&(
