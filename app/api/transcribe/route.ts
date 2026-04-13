@@ -11,6 +11,12 @@ export async function POST(req: NextRequest) {
     const audio    = formData.get('audio') as File | null;
     const textOnly = formData.get('text') as string | null;   // bypass for typed input
     const dietary  = JSON.parse((formData.get('dietary') as string) ?? '{}');
+    const lang     = (formData.get('lang') as string | null) ?? 'en';  // BCP-47 locale from device
+
+    // Extract primary language code (e.g. "hi" from "hi-IN", "ta" from "ta-SG")
+    const whisperLang = lang.split('-')[0];
+    // Whisper language hint — only set for non-English to help accuracy, keep null for English/auto
+    const whisperLangHint = whisperLang !== 'en' ? whisperLang : undefined;
 
     let transcript = textOnly ?? '';
 
@@ -19,7 +25,7 @@ export async function POST(req: NextRequest) {
       const transcription = await openai.audio.transcriptions.create({
         model: 'whisper-1',
         file:  audio,
-        // no language lock — Whisper auto-detects and handles code-switching (Hinglish, Spanglish, etc.)
+        language: whisperLangHint,   // hint for non-English; undefined = Whisper auto-detects
         prompt: 'Grocery items list. May include quantities like grams, kg, litres, pieces. Speaker may mix Hindi, Spanish, or other languages with English.',
       });
       transcript = transcription.text;
@@ -41,12 +47,13 @@ Return a JSON object with key "items" — an array of objects:
 { "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }
 
 Rules:
-- item_name: clean title-case singular (e.g. "Spinach", "Greek Yogurt", "Brown Rice")
-- quantity: numeric (default 1)  
+- item_name: preserve the name in the language spoken. If the user said "Tamatar", use "Tamatar". If they said "Tomato", use "Tomato". If they said "1 kg Tamatar", use "Tamatar". Keep regional names authentic.
+- quantity: numeric (default 1)
 - unit: "g" | "kg" | "ml" | "L" | "pcs" | "loaf" | "bunch" | "packet" | "dozen"
 - category: "Produce" | "Dairy" | "Protein" | "Grains" | "Snacks" | "Beverages" | "Condiments" | "Frozen" | "Other"
 - emoji: one relevant emoji
 
+User's locale: ${lang}. Display item names in the language/dialect the user spoke.
 Diet context: ${dietary.isVeg ? 'vegetarian' : 'omnivore'}${dietary.eatsEggs ? ', eats eggs' : ''}
 Ignore filler words like "bought", "got", "picked up", "some", "aur", "y", "und".
 The user may speak in mixed languages — extract items regardless of language used.

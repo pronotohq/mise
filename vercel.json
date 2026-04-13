@@ -5,7 +5,10 @@
     "app/api/scan/route.ts":                   { "maxDuration": 60 },
     "app/api/email-sync/route.ts":             { "maxDuration": 45 },
     "app/api/gmail-sync/route.ts":             { "maxDuration": 90 },
-    "app/api/inbound-email/generate/route.ts": { "maxDuration": 10 },
-    "app/api/inbound-email/webhook/route.ts":  { "maxDuration": 45 }
+    "app/api/inbound-email/generate/route.ts":  { "maxDuration": 10 },
+    "app/api/inbound-email/webhook/route.ts":   { "maxDuration": 45 },
+    "app/api/inbound-email/pending/route.ts":   { "maxDuration": 10 },
+    "app/api/inbound-email/status/route.ts":    { "maxDuration": 10 },
+    "app/api/push-subscription/route.ts":       { "maxDuration": 10 }
   }
 }

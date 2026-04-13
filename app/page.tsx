@@ -198,6 +198,13 @@ function fmtDays(d: number): string {
   return `${d} days`;
 }
 
+// ── Consume verb helper (for markUsed toast) ──────────────────────
+function consumeVerb(name: string): string {
+  const lc = name.toLowerCase();
+  if (['milk','juice','water','doodh','lassi','smoothie','tea','coffee','oil','broth'].some(l => lc.includes(l))) return 'Consumed';
+  return 'Finished';
+}
+
 // ── Confetti ───────────────────────────────────────────────────────
 function Confetti({on}:{on:boolean}) {
   if(!on) return null;
@@ -214,7 +221,7 @@ function Confetti({on}:{on:boolean}) {
 }
 
 // ── Swipeable Pantry Row ───────────────────────────────────────────
-function PantryRow({item,onTap,onEditExpiry}:{item:PantryItem;onTap:(item:PantryItem)=>void;onEditExpiry:(item:PantryItem)=>void}) {
+function PantryRow({item,onTap,onEditExpiry,onDelete}:{item:PantryItem;onTap:(item:PantryItem)=>void;onEditExpiry:(item:PantryItem)=>void;onDelete:(id:string)=>void}) {
   const dl = daysLeft(item.expiry);
   const urgent = dl <= 1;
   return (
@@ -229,6 +236,9 @@ function PantryRow({item,onTap,onEditExpiry}:{item:PantryItem;onTap:(item:Pantry
         <span style={{fontSize:11,color:'var(--gray)'}}>{item.qty}{item.unit} · {item.src}</span>
       </div>
       <button onClick={e=>{e.stopPropagation();onEditExpiry(item);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--gray)',fontSize:11,fontWeight:700,textDecoration:'underline',padding:'4px',flexShrink:0}}>edit</button>
+      <button onClick={e=>{e.stopPropagation();onDelete(item.id);}}
+        style={{background:'none',border:'none',cursor:'pointer',color:'#EF4444',fontSize:16,padding:'4px',flexShrink:0}}
+        title="Delete">🗑</button>
     </div>
   );
 }
@@ -286,6 +296,15 @@ export default function App() {
   const [fridgeAuditDone, setFridgeAuditDone] = useState(false);
   const [essentialsAdded, setEssentialsAdded] = useState(false);
   const [addPath, setAddPath] = useState<'photo'|'voice'|'email'|null>(null);
+  // ── Auto-sync state ─────────────────────────────────────────────
+  const [syncEmail, setSyncEmail] = useState('');
+  const [syncUserId, setSyncUserId] = useState('');
+  const [syncLog, setSyncLog] = useState<{store:string;count:number;syncedAt:string;items:string[]}[]>([]);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [showSyncSetup, setShowSyncSetup] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [cookedTimestamps, setCookedTimestamps] = useState<Record<string,string>>({});
+  const [dailyRescipe, setDailyRescipe] = useState<{item:PantryItem;recipe:string}|null>(null);
   const photoInputRef = useRef<HTMLInputElement|null>(null);
   const fridgeAuditRef = useRef<HTMLInputElement|null>(null);
   const recognitionRef = useRef<unknown>(null);
@@ -307,12 +326,16 @@ export default function App() {
         if(d.ateLog)   setAteLog(d.ateLog);
         if(d.isPremium) setIsPremium(true);
         if(d.purchaseHistory) setPurchaseHistory(d.purchaseHistory);
+        if(d.syncEmail)  { setSyncEmail(d.syncEmail);  }
+        if(d.syncUserId) { setSyncUserId(d.syncUserId); }
+        if(d.syncLog)    { setSyncLog(d.syncLog); }
+        if(d.cookedTimestamps) setCookedTimestamps(d.cookedTimestamps);
       }
     } catch{}
   },[]);
 
   // ── Save to localStorage ────────────────────────────────────────
-  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];wasteLog:ItemLog[];ateLog:ItemLog[];isPremium:boolean;purchaseHistory:PurchaseRecord[]}>)=>{
+  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];wasteLog:ItemLog[];ateLog:ItemLog[];isPremium:boolean;purchaseHistory:PurchaseRecord[];syncEmail:string;syncUserId:string;syncLog:{store:string;count:number;syncedAt:string;items:string[]}[];cookedTimestamps:Record<string,string>}>)=>{
     try {
       const current = JSON.parse(localStorage.getItem('mise_v1')||'{}');
       localStorage.setItem('mise_v1', JSON.stringify({...current,...updates}));
@@ -396,6 +419,90 @@ export default function App() {
         reg.active?.postMessage({ type:'SCHEDULE_NOTIF', title: labels[meal]||'FreshNudge 🍳', body, delayMs: delay });
       });
     });
+  };
+
+  // ── Auto-sync: generate unique inbound email ────────────────────
+  const getOrCreateSyncEmail = async () => {
+    if (syncEmail) return syncEmail;
+    setSyncLoading(true);
+    try {
+      // Stable userId from localStorage (or create one)
+      let uid_ = syncUserId;
+      if (!uid_) {
+        uid_ = 'user_' + uid();
+        setSyncUserId(uid_);
+        save({syncUserId: uid_});
+      }
+      const res = await fetch('/api/inbound-email/generate', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({userId: uid_}),
+      });
+      const data = await res.json();
+      if (data.inboundEmail) {
+        setSyncEmail(data.inboundEmail);
+        save({syncEmail: data.inboundEmail});
+        return data.inboundEmail as string;
+      }
+    } catch { showToast('Could not generate sync email — try again'); }
+    finally { setSyncLoading(false); }
+    return '';
+  };
+
+  // ── Auto-sync: copy email to clipboard ──────────────────────────
+  const copySyncEmail = async () => {
+    const email = syncEmail || await getOrCreateSyncEmail();
+    if (!email) return;
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { showToast('Copy failed — tap and hold to copy'); }
+  };
+
+  // ── Auto-sync: poll for pending items (2x/day: 9 AM & 6 PM, or focus after 6h gap) ─────────
+  useEffect(() => {
+    const checkPending = async () => {
+      const uid_ = syncUserId;
+      if (!uid_ || !syncEmail) return;
+      // Time-gate: only sync at 9:00–9:30 AM or 18:00–18:30 PM, or if focus after 6h gap
+      const now = new Date();
+      const h = now.getHours(), mm = now.getMinutes();
+      const inWindow = (h === 9 && mm < 30) || (h === 18 && mm < 30);
+      const lastSync = parseInt(localStorage.getItem('lastSyncTs') || '0');
+      const sinceLastSync = Date.now() - lastSync;
+      if (!inWindow && sinceLastSync < 6 * 3600000) return;
+      try {
+        const res = await fetch(`/api/inbound-email/pending?userId=${uid_}`);
+        const data = await res.json();
+        if (data.items?.length) {
+          addItems(data.items, {src: `📧 ${data.store || 'Email sync'}`});
+          const entry = {store: data.store||'Email', count:data.items.length, syncedAt:new Date().toISOString(), items:data.items.slice(0,5).map((i:{item_name:string})=>i.item_name)};
+          const newLog = [entry,...syncLog].slice(0,10);
+          setSyncLog(newLog);
+          save({syncLog:newLog});
+          showToast(`🎉 ${data.items.length} items synced from ${data.store||'email'}!`);
+          localStorage.setItem('lastSyncTs', Date.now().toString());
+        }
+      } catch {} // silent — polling should never crash the app
+    };
+    checkPending();
+    window.addEventListener('focus', checkPending);
+    return () => window.removeEventListener('focus', checkPending);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncUserId, syncEmail]);
+
+  // ── Auto-sync: refresh sync status from server ──────────────────
+  const refreshSyncStatus = async () => {
+    if (!syncUserId) return;
+    try {
+      const res = await fetch(`/api/inbound-email/status?userId=${syncUserId}`);
+      const data = await res.json();
+      if (data.syncs?.length) {
+        setSyncLog(data.syncs);
+        save({syncLog: data.syncs});
+      }
+    } catch {}
   };
 
   // ── Photo / receipt scanner ──────────────────────────────────────
@@ -671,6 +778,7 @@ export default function App() {
       const fd = new FormData();
       fd.append('audio', blob, 'voice.webm');
       fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs}));
+      fd.append('lang', navigator.language || 'en');
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
       if(data.transcript) setVoiceTranscript(data.transcript);
@@ -684,6 +792,7 @@ export default function App() {
       const fd = new FormData();
       fd.append('text', text);
       fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs}));
+      fd.append('lang', navigator.language || 'en');
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
       if(data.items?.length) addItems(data.items, {interactive:true, src:'🎙️'});
@@ -729,6 +838,7 @@ export default function App() {
     }
     setPantry(updatedPantry); setAteLog(updatedAte);
     save({pantry:updatedPantry,ateLog:updatedAte});
+    showToast(`${consumeVerb(item.name)} ${item.name} ✓`);
   };
   const markWasted=(id:string)=>{
     const item = pantry.find(i=>i.id===id);
@@ -745,12 +855,19 @@ export default function App() {
     setPantry(updated); save({pantry:updated}); setEditExpiry(null);
   };
 
+  const deleteItem = (id: string) => {
+    setPantry(p => { const updated = p.filter(i=>i.id!==id); save({pantry:updated}); return updated; });
+    showToast('🗑 Item removed');
+  };
+
   // ── Done cooking ────────────────────────────────────────────────
   const doneCooking=()=>{
     if(!cooking) return;
     const log: CookLog = {id:uid(),name:cooking.name,period,date:new Date().toISOString()};
     const newLog = [log,...cookLog];
-    setCookLog(newLog); save({cookLog:newLog});
+    const newTimestamps = {...cookedTimestamps, [cooking.name.toLowerCase()]: new Date().toISOString()};
+    setCookedTimestamps(newTimestamps);
+    setCookLog(newLog); save({cookLog:newLog, cookedTimestamps:newTimestamps});
     // deduct used ingredients
     const updated = [...pantry];
     cooking.ingredients_used?.forEach(({name})=>{
@@ -772,6 +889,64 @@ export default function App() {
   const expiring = sortedPantry.filter(i=>{const d=daysLeft(i.expiry);return d>1&&d<=3;});
   const fresh    = sortedPantry.filter(i=>daysLeft(i.expiry)>3);
   const searched = search ? pantry.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())) : null;
+
+  // ── Module 6: ROI Savings Dashboard ────────────────────────────
+  const savedThisMonth = (() => {
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const cookedCount = cookLog.filter(c => new Date(c.date) >= monthStart).length;
+    const ingredientCost = ateLog.filter(a => new Date(a.date) >= monthStart).reduce((s,a)=>s+(a.price||0),0);
+    return Math.max(0, cookedCount * region.avgTakeout - ingredientCost);
+  })();
+
+  // ── Module 4: Burn Rate — running-low nudges ────────────────────
+  const burnNudges = (() => {
+    const thirtyAgo = new Date(Date.now() - 30 * 86400000);
+    const burnMap: Record<string,number> = {};
+    ateLog.filter(a => new Date(a.date) >= thirtyAgo).forEach(a => {
+      burnMap[a.name.toLowerCase()] = (burnMap[a.name.toLowerCase()]||0) + 1;
+    });
+    return perishable.filter(item => {
+      const burns = burnMap[item.name.toLowerCase()] || 0;
+      if (burns < 2) return false;
+      const def = getCategoryDefault(item.name);
+      return def.qty > 0 && (item.qty / def.qty) < 0.25;
+    }).slice(0, 2);
+  })();
+
+  // ── Recipe cooldown (4-day) filter ─────────────────────────────
+  const fourDaysAgo = new Date(Date.now() - 4 * 86400000);
+  const filterCooledMeals = (mealList: Meal[]) =>
+    mealList.filter(m => {
+      const ts = cookedTimestamps[m.name.toLowerCase()];
+      return !ts || new Date(ts) < fourDaysAgo;
+    });
+
+  // ── Daily Rescue at 4:30 PM ─────────────────────────────────────
+  useEffect(() => {
+    const checkDailyRescue = () => {
+      const now = new Date();
+      const h = now.getHours(), m = now.getMinutes();
+      if (h === 16 && m >= 30 && m < 35) { // 4:30–4:35 PM window
+        const mostExpiring = [...perishable].sort((a,b) => daysLeft(a.expiry) - daysLeft(b.expiry))[0];
+        if (mostExpiring && daysLeft(mostExpiring.expiry) <= 2) {
+          const recipes: Record<string,string> = {
+            spinach:'Palak Paneer',tomato:'Tomato Rasam',banana:'Banana Smoothie',
+            milk:'Kheer',egg:'Egg Bhurji',chicken:'Quick Chicken Curry',
+            bread:'French Toast',mushroom:'Mushroom Stir Fry',
+          };
+          const lc = mostExpiring.name.toLowerCase();
+          const recipe = Object.entries(recipes).find(([k]) => lc.includes(k))?.[1] || 'Stir Fry';
+          setDailyRescipe({item: mostExpiring, recipe});
+          // Auto-dismiss after 30s
+          setTimeout(() => setDailyRescipe(null), 30000);
+        }
+      }
+    };
+    const interval = setInterval(checkDailyRescue, 60000); // check every minute
+    checkDailyRescue(); // check on mount too
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perishable]);
 
   // ── Nav helpers ─────────────────────────────────────────────────
   const navItems = [
@@ -1100,14 +1275,27 @@ export default function App() {
                   </div>
                 </button>
               ) : (
-                <button onClick={connectGmail}
-                  style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-                  <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
-                  <div style={{textAlign:'left'}}>
-                    <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Connect Gmail</div>
-                    <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Auto-import FoodPanda, Grab, Swiggy orders</div>
-                  </div>
-                </button>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {/* Gmail OAuth option */}
+                  <button onClick={connectGmail}
+                    style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'11px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                    <div style={{width:38,height:38,borderRadius:19,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>📧</div>
+                    <div style={{textAlign:'left'}}>
+                      <div style={{fontSize:13,fontWeight:800,color:'var(--ink)'}}>Connect Gmail</div>
+                      <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>OAuth · auto-scans order emails</div>
+                    </div>
+                  </button>
+                  {/* Universal forward address */}
+                  <button onClick={async()=>{const e=await getOrCreateSyncEmail();if(e){await navigator.clipboard.writeText(e).catch(()=>{});showToast('📋 Sync address copied!');setTab('profile');setShowSyncSetup(true);}}}
+                    style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'11px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                    <div style={{width:38,height:38,borderRadius:19,background:'#0EA5E9',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>✉️</div>
+                    <div style={{flex:1,textAlign:'left'}}>
+                      <div style={{fontSize:13,fontWeight:800,color:'var(--ink)'}}>Forward-to sync</div>
+                      <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Works with any email app globally</div>
+                    </div>
+                    <span style={{fontSize:11,background:'#0EA5E9',color:'#fff',borderRadius:6,padding:'2px 7px',flexShrink:0}}>All regions</span>
+                  </button>
+                </div>
               )
             ) : (
               <button onClick={()=>setShowPremium(true)}
@@ -1146,10 +1334,51 @@ export default function App() {
 
       {/* Item list */}
       <div style={{background:'var(--surf)',padding:'4px 14px 24px',minHeight:200}}>
+
+        {/* ── ROI Savings Ticker ── */}
+        {(savedThisMonth > 0 || cookLog.filter(c=>new Date(c.date)>=new Date(new Date().setDate(1))).length > 0) && (
+          <div style={{background:'linear-gradient(135deg,#ECFDF5,#D1FAE5)',border:'1.5px solid #6EE7B7',borderRadius:14,padding:'10px 14px',marginBottom:12,marginTop:8,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:20}}>💰</span>
+            <div style={{flex:1}}>
+              <p style={{fontSize:12,fontWeight:800,color:'#065F46'}}>Savings this month</p>
+              <p style={{fontSize:11,color:'#047857'}}>{savedThisMonth>0?`Cooking at home saved you ${fmt(savedThisMonth)} vs ordering out!`:`${cookLog.filter(c=>new Date(c.date)>=new Date(new Date().setDate(1))).length} home-cooked meals — savings build as you log prices`}</p>
+            </div>
+            {savedThisMonth>0&&<span style={{fontSize:17,fontWeight:900,color:'#065F46',flexShrink:0}}>{fmt(savedThisMonth)}</span>}
+          </div>
+        )}
+
+        {/* ── Burn Rate Nudges ── */}
+        {burnNudges.map(item => {
+          const store = region.groceryApps[0] || 'your grocery app';
+          const DEEP: Record<string,string> = {
+            Blinkit:`https://blinkit.com/s/?q=${encodeURIComponent(item.name)}`,
+            'Swiggy Instamart':`https://www.swiggy.com/search?query=${encodeURIComponent(item.name)}`,
+            Zepto:`https://www.zeptonow.com/search?query=${encodeURIComponent(item.name)}`,
+            GrabMart:`https://food.grab.com/sg/en/groceries`,
+            Instacart:`https://www.instacart.com/store/s?k=${encodeURIComponent(item.name)}`,
+            Ocado:`https://www.ocado.com/search?entry=${encodeURIComponent(item.name)}`,
+            'Woolworths Online':`https://www.woolworths.com.au/shop/search/products?searchTerm=${encodeURIComponent(item.name)}`,
+          };
+          const link = Object.entries(DEEP).find(([k])=>store.includes(k))?.[1]||'#';
+          return (
+            <div key={item.id} style={{background:'#FFF7ED',border:'1.5px solid #FED7AA',borderRadius:14,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:20}}>{item.emoji}</span>
+              <div style={{flex:1}}>
+                <p style={{fontSize:12,fontWeight:800,color:'#92400E'}}>Running low on {item.name}</p>
+                <p style={{fontSize:11,color:'#B45309'}}>You go through this fast — restock soon</p>
+              </div>
+              <a href={link} target="_blank" rel="noreferrer"
+                style={{background:'#F97316',color:'#fff',border:'none',borderRadius:10,padding:'6px 12px',fontSize:11,fontWeight:700,textDecoration:'none',flexShrink:0,whiteSpace:'nowrap'}}>
+                Order →
+              </a>
+            </div>
+          );
+        })}
+
         {searched ? (
           searched.length===0
             ? <p style={{textAlign:'center',padding:'40px',color:'var(--gray)'}}>&ldquo;{search}&rdquo; not in fridge</p>
-            : searched.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)
+            : searched.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry} onDelete={deleteItem}/>)
         ) : (
           <>
             {urgent.length>0&&<>
@@ -1158,7 +1387,7 @@ export default function App() {
                 <span style={{fontWeight:800,fontSize:11,color:'var(--red)',letterSpacing:.6}}>EXPIRES TODAY — COOK FIRST</span>
                 <span className="pill pill-red">{urgent.length}</span>
               </div>
-              {urgent.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)}
+              {urgent.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry} onDelete={deleteItem}/>)}
             </>}
             {expiring.length>0&&<>
               <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
@@ -1166,7 +1395,7 @@ export default function App() {
                 <span style={{fontWeight:800,fontSize:11,color:'var(--goldD)',letterSpacing:.6}}>EXPIRING IN 2–3 DAYS</span>
                 <span className="pill pill-amber">{expiring.length}</span>
               </div>
-              {expiring.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)}
+              {expiring.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry} onDelete={deleteItem}/>)}
             </>}
             {fresh.length>0&&<>
               <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
@@ -1174,7 +1403,7 @@ export default function App() {
                 <span style={{fontWeight:800,fontSize:11,color:'#15803D',letterSpacing:.6}}>FRESH & STOCKED</span>
                 <span className="pill pill-green">{fresh.length}</span>
               </div>
-              {fresh.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)}
+              {fresh.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry} onDelete={deleteItem}/>)}
             </>}
             {/* Pantry staples section — collapsed, no expiry tracking */}
             {staples.length>0&&<>
@@ -1370,7 +1599,7 @@ export default function App() {
               <p style={{fontSize:13,color:'var(--gray)',marginTop:5}}>Go to Fridge and add items by voice.</p>
               <button className="btn-primary" onClick={()=>setTab('fridge')} style={{marginTop:16,width:'auto',padding:'11px 24px'}}>Go to Fridge →</button>
             </div>
-          ):(currentMeals||[]).map(m=>(
+          ):(filterCooledMeals(currentMeals||[])).map(m=>(
             <div key={m.id} style={{background:'var(--white)',border:`1.5px solid ${m.uses_expiring?'#FCA5A5':'var(--border)'}`,borderRadius:20,padding:16,marginBottom:14,position:'relative'}}>
               {m.uses_expiring&&<div style={{position:'absolute',top:12,right:12,background:'#FEE2E2',color:'#B91C1C',fontSize:9,fontWeight:800,padding:'2px 8px',borderRadius:10}}>USE TODAY</div>}
               <div style={{display:'flex',gap:12,alignItems:'flex-start',marginBottom:10}}>
@@ -1688,6 +1917,88 @@ export default function App() {
             </div>
           ))}
         </div>
+
+        {/* ── Email Auto-Sync Settings ── */}
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:18,marginBottom:14,overflow:'hidden'}}>
+          {/* Header */}
+          <div onClick={()=>{setShowSyncSetup(v=>!v); if(!syncEmail) getOrCreateSyncEmail(); else refreshSyncStatus();}}
+            style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer'}}>
+            <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,#6366F1,#4F46E5)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>📧</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Email Auto-Sync</div>
+              <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>
+                {syncLog.length>0
+                  ? `Last sync: ${new Date(syncLog[0].syncedAt).toLocaleDateString()} · ${syncLog[0].count} items from ${syncLog[0].store}`
+                  : syncEmail ? 'Waiting for first order email…' : 'Forward order emails → auto-add to fridge'}
+              </div>
+            </div>
+            {syncLog.length>0 && <div style={{width:8,height:8,borderRadius:4,background:'#22C55E',flexShrink:0}}/>}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gray)" strokeWidth="2.5" strokeLinecap="round" style={{transform:showSyncSetup?'rotate(90deg)':'rotate(0deg)',transition:'transform .2s',flexShrink:0}}><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+
+          {showSyncSetup&&(
+            <div style={{borderTop:'1px solid var(--border)',padding:'16px'}}>
+              {/* Your unique sync email */}
+              <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:8}}>YOUR UNIQUE SYNC ADDRESS</p>
+              {syncLoading?(
+                <div style={{background:'var(--grayL)',borderRadius:12,padding:14,textAlign:'center',color:'var(--gray)',fontSize:13}}>Generating your address…</div>
+              ) : syncEmail ? (
+                <div style={{background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:12,padding:'10px 12px',display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                  <div style={{flex:1,fontSize:12,fontWeight:700,color:'var(--navy)',wordBreak:'break-all',fontFamily:'monospace'}}>{syncEmail}</div>
+                  <button onClick={copySyncEmail} style={{background:copied?'#22C55E':'var(--navy)',border:'none',borderRadius:8,padding:'7px 12px',fontSize:11,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,transition:'background .2s'}}>
+                    {copied?'✓ Copied':'Copy'}
+                  </button>
+                </div>
+              ) : (
+                <button onClick={getOrCreateSyncEmail} style={{width:'100%',background:'var(--navy)',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>
+                  Generate my sync address →
+                </button>
+              )}
+
+              {/* Setup guide */}
+              <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:8}}>HOW TO SET UP (2 MINUTES)</p>
+              {[
+                ['1','Get your address above','Tap Copy to copy your unique FreshNudge email'],
+                ['2','Open Gmail / Outlook','Go to Settings → Filters → Create new filter'],
+                ['3','Set filter rule','From: swiggy.com OR blinkit.com OR foodpanda.sg (or your local apps)'],
+                ['4','Action: Forward to','Paste your FreshNudge sync address. Done!'],
+              ].map(([n,title,desc])=>(
+                <div key={n} style={{display:'flex',gap:10,marginBottom:10}}>
+                  <div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:900,flexShrink:0}}>{n}</div>
+                  <div><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{title}</div><div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{desc}</div></div>
+                </div>
+              ))}
+
+              {/* Supported apps by region */}
+              <div style={{background:'var(--grayL)',borderRadius:12,padding:'10px 12px',marginBottom:12}}>
+                <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginBottom:6}}>WORKS WITH</p>
+                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                  {[['🇮🇳','Blinkit, Swiggy, Zepto, BigBasket'],['🇸🇬','FoodPanda, GrabMart, RedMart, NTUC'],['🇺🇸','Instacart, Amazon Fresh, Walmart'],['🇬🇧','Ocado, Tesco, Sainsbury\'s'],['🇦🇺','Woolworths, Coles']].map(([flag,apps])=>(
+                    <div key={flag} style={{fontSize:11,color:'var(--inkM)'}}><span>{flag}</span> {apps}</div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Recent sync log */}
+              {syncLog.length>0&&(
+                <>
+                  <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:8}}>RECENT SYNCS</p>
+                  {syncLog.slice(0,5).map((s,i)=>(
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<Math.min(syncLog.length,5)-1?'1px solid var(--border)':'none'}}>
+                      <div style={{width:32,height:32,borderRadius:8,background:'#F0FDF4',border:'1px solid #86EFAC',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0}}>📦</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,fontWeight:700,color:'var(--ink)'}}>{s.store} · {s.count} items</div>
+                        <div style={{fontSize:10,color:'var(--gray)'}}>{s.items?.slice(0,3).join(', ')}{(s.items?.length||0)>3?` +${s.items.length-3} more`:''}</div>
+                      </div>
+                      <div style={{fontSize:10,color:'var(--gray)',flexShrink:0}}>{new Date(s.syncedAt).toLocaleDateString()}</div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Reset */}
         <button onClick={()=>{ if(confirm('Reset all data and restart onboarding?')){localStorage.removeItem('mise_v1');window.location.reload();} }}
           style={{width:'100%',background:'none',border:'1px solid #FCA5A5',borderRadius:12,padding:11,fontSize:13,color:'var(--red)',cursor:'pointer',fontFamily:'inherit'}}>
@@ -1793,6 +2104,21 @@ export default function App() {
           tab==='insights' ? renderInsights() :
           renderProfile()}
       </div>
+
+      {/* Daily Rescue banner */}
+      {dailyRescipe && (
+        <div style={{position:'fixed',bottom:80,left:12,right:12,background:'linear-gradient(135deg,#1E3A8A,#1E40AF)',borderRadius:18,padding:'14px 16px',zIndex:150,display:'flex',alignItems:'center',gap:12,boxShadow:'0 8px 32px rgba(30,58,138,.4)'}}>
+          <span style={{fontSize:24}}>{dailyRescipe.item.emoji}</span>
+          <div style={{flex:1}}>
+            <p style={{fontSize:13,fontWeight:800,color:'#fff',marginBottom:2}}>🍳 Daily Rescue!</p>
+            <p style={{fontSize:12,color:'#BFDBFE'}}>Use that {dailyRescipe.item.name} for a 15-min {dailyRescipe.recipe}</p>
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>{setTab('meals');setDailyRescipe(null);}} style={{background:'#22C55E',color:'#fff',border:'none',borderRadius:10,padding:'6px 12px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Cook →</button>
+            <button onClick={()=>setDailyRescipe(null)} style={{background:'rgba(255,255,255,.15)',color:'#fff',border:'none',borderRadius:10,padding:'6px 8px',fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>✕</button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom nav */}
       {onboardingDone&&!cooking&&(
