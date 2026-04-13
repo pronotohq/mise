@@ -24,18 +24,20 @@ interface Profile {
 }
 interface CookLog { id: string; name: string; period: string; date: string; }
 interface ItemLog  { id: string; name: string; emoji: string; price: number; date: string; }
-interface Region   { symbol: string; avgTakeout: number; groceryApps: string[]; monthlyPrice: string; }
+interface Region   { symbol: string; avgTakeout: number; groceryApps: string[]; monthlyPrice: string; monthlyPriceNum: number; avgOrderSize: number; priceMultiplier: number; }
 
 // ── Region / currency map ──────────────────────────────────────────
 const REGIONS: Record<string,Region> = {
-  IN: { symbol:'₹',   avgTakeout:350, monthlyPrice:'₹299',   groceryApps:['Swiggy Instamart','Blinkit','Zepto','BigBasket','Amazon Fresh India'] },
-  SG: { symbol:'S$',  avgTakeout:20,  monthlyPrice:'S$5.99', groceryApps:['FoodPanda','GrabMart','RedMart','NTUC FairPrice Online','Amazon Fresh SG'] },
-  US: { symbol:'$',   avgTakeout:18,  monthlyPrice:'$4.99',  groceryApps:['Instacart','Amazon Fresh','DoorDash Grocery','Walmart Grocery'] },
-  GB: { symbol:'£',   avgTakeout:15,  monthlyPrice:'£3.99',  groceryApps:['Ocado','Tesco','Sainsbury\'s Online','Amazon Fresh UK'] },
-  AU: { symbol:'A$',  avgTakeout:25,  monthlyPrice:'A$6.99', groceryApps:['Woolworths Online','Coles Online','Amazon Fresh AU'] },
-  AE: { symbol:'AED ',avgTakeout:60,  monthlyPrice:'AED 18', groceryApps:['Noon','Carrefour Online','Amazon Fresh UAE','Talabat Mart'] },
-  MY: { symbol:'RM',  avgTakeout:25,  monthlyPrice:'RM 18',  groceryApps:['FoodPanda','GrabMart','Jaya Grocer Online'] },
-  CA: { symbol:'CA$', avgTakeout:20,  monthlyPrice:'CA$5.99',groceryApps:['Instacart','Amazon Fresh CA','Walmart Grocery CA'] },
+  //                              per-meal  monthly     monthly#   avg grocery  price vs
+  //                              saving    price       (number)   order size   demo scale
+  IN: { symbol:'₹',   avgTakeout:300, monthlyPrice:'₹99',    monthlyPriceNum:99,   avgOrderSize:800,  priceMultiplier:1,     groceryApps:['Swiggy Instamart','Blinkit','Zepto','BigBasket','Amazon Fresh India'] },
+  SG: { symbol:'S$',  avgTakeout:18,  monthlyPrice:'S$5.99', monthlyPriceNum:5.99, avgOrderSize:60,   priceMultiplier:0.017, groceryApps:['FoodPanda','GrabMart','RedMart','NTUC FairPrice Online','Amazon Fresh SG'] },
+  US: { symbol:'$',   avgTakeout:15,  monthlyPrice:'$4.99',  monthlyPriceNum:4.99, avgOrderSize:80,   priceMultiplier:0.012, groceryApps:['Instacart','Amazon Fresh','DoorDash Grocery','Walmart Grocery'] },
+  GB: { symbol:'£',   avgTakeout:12,  monthlyPrice:'£3.99',  monthlyPriceNum:3.99, avgOrderSize:55,   priceMultiplier:0.0095,groceryApps:['Ocado','Tesco','Sainsbury\'s Online','Amazon Fresh UK'] },
+  AU: { symbol:'A$',  avgTakeout:20,  monthlyPrice:'A$6.99', monthlyPriceNum:6.99, avgOrderSize:90,   priceMultiplier:0.018, groceryApps:['Woolworths Online','Coles Online','Amazon Fresh AU'] },
+  AE: { symbol:'AED ',avgTakeout:50,  monthlyPrice:'AED 15', monthlyPriceNum:15,   avgOrderSize:150,  priceMultiplier:0.044, groceryApps:['Noon','Carrefour Online','Amazon Fresh UAE','Talabat Mart'] },
+  MY: { symbol:'RM',  avgTakeout:20,  monthlyPrice:'RM 15',  monthlyPriceNum:15,   avgOrderSize:120,  priceMultiplier:0.056, groceryApps:['FoodPanda','GrabMart','Jaya Grocer Online'] },
+  CA: { symbol:'CA$', avgTakeout:16,  monthlyPrice:'CA$5.99',monthlyPriceNum:5.99, avgOrderSize:85,   priceMultiplier:0.016, groceryApps:['Instacart','Amazon Fresh CA','Walmart Grocery CA'] },
 };
 const DEFAULT_REGION = REGIONS['IN'];
 function detectRegion(): Region {
@@ -176,6 +178,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [actionItem, setActionItem] = useState<PantryItem|null>(null);
   const [scanning,  setScanning]  = useState(false);
+  const [usedQty,      setUsedQty]      = useState('');
   const [showEmail,    setShowEmail]    = useState(false);
   const [emailText,    setEmailText]    = useState('');
   const [emailLoading, setEmailLoading] = useState(false);
@@ -367,17 +370,19 @@ export default function App() {
       const cur = JSON.parse(localStorage.getItem('mise_v1')||'{}');
       if (!cur.joinDate) localStorage.setItem('mise_v1', JSON.stringify({...cur, joinDate: new Date().toISOString()}));
     } catch{}
-    // Seed demo pantry
+    // Seed demo pantry — prices scaled to user's region
+    const r = region.priceMultiplier;
+    const p = (inr: number) => Math.round(inr * r);
     const demo: PantryItem[] = [
-      {id:uid(),name:'Spinach',  emoji:'🥬',cat:'Produce',qty:200,unit:'g',price:49, expiry:expiryDate(0),expDays:0,src:'🎙️'},
-      {id:uid(),name:'Paneer',   emoji:'🧀',cat:'Dairy',  qty:250,unit:'g',price:95, expiry:expiryDate(1),expDays:1,src:'🎙️'},
-      {id:uid(),name:'Milk',     emoji:'🥛',cat:'Dairy',  qty:1,  unit:'L',price:68, expiry:expiryDate(1),expDays:1,src:'🎙️'},
-      {id:uid(),name:'Eggs',     emoji:'🥚',cat:'Protein',qty:12, unit:'pcs',price:85,expiry:expiryDate(5),expDays:5,src:'🎙️'},
-      {id:uid(),name:'Tomatoes', emoji:'🍅',cat:'Produce',qty:4,  unit:'pcs',price:35,expiry:expiryDate(3),expDays:3,src:'🎙️'},
-      {id:uid(),name:'Banana',   emoji:'🍌',cat:'Produce',qty:4,  unit:'pcs',price:30,expiry:expiryDate(3),expDays:3,src:'🎙️'},
-      {id:uid(),name:'Oats',     emoji:'🥣',cat:'Grains', qty:500,unit:'g',price:85, expiry:expiryDate(90),expDays:90,src:'🎙️'},
-      {id:uid(),name:'Brown Rice',emoji:'🌾',cat:'Grains', qty:1,  unit:'kg',price:140,expiry:expiryDate(60),expDays:60,src:'🎙️'},
-      {id:uid(),name:'Onion',    emoji:'🧅',cat:'Produce',qty:3,  unit:'pcs',price:20,expiry:expiryDate(20),expDays:20,src:'🎙️'},
+      {id:uid(),name:'Spinach',  emoji:'🥬',cat:'Produce',qty:200,unit:'g',price:p(49),  expiry:expiryDate(0),expDays:0,src:'🎙️'},
+      {id:uid(),name:'Paneer',   emoji:'🧀',cat:'Dairy',  qty:250,unit:'g',price:p(95),  expiry:expiryDate(1),expDays:1,src:'🎙️'},
+      {id:uid(),name:'Milk',     emoji:'🥛',cat:'Dairy',  qty:1,  unit:'L',price:p(68),  expiry:expiryDate(1),expDays:1,src:'🎙️'},
+      {id:uid(),name:'Eggs',     emoji:'🥚',cat:'Protein',qty:12, unit:'pcs',price:p(85), expiry:expiryDate(5),expDays:5,src:'🎙️'},
+      {id:uid(),name:'Tomatoes', emoji:'🍅',cat:'Produce',qty:4,  unit:'pcs',price:p(35), expiry:expiryDate(3),expDays:3,src:'🎙️'},
+      {id:uid(),name:'Banana',   emoji:'🍌',cat:'Produce',qty:4,  unit:'pcs',price:p(30), expiry:expiryDate(3),expDays:3,src:'🎙️'},
+      {id:uid(),name:'Oats',     emoji:'🥣',cat:'Grains', qty:500,unit:'g',price:p(85),  expiry:expiryDate(90),expDays:90,src:'🎙️'},
+      {id:uid(),name:'Brown Rice',emoji:'🌾',cat:'Grains', qty:1,  unit:'kg',price:p(140), expiry:expiryDate(60),expDays:60,src:'🎙️'},
+      {id:uid(),name:'Onion',    emoji:'🧅',cat:'Produce',qty:3,  unit:'pcs',price:p(20), expiry:expiryDate(20),expDays:20,src:'🎙️'},
     ];
     setPantry(demo);
     const fam: FamilyMember[] = [
@@ -509,11 +514,22 @@ export default function App() {
   useEffect(()=>{ if(tab==='meals') generateMeals(period); },[tab,period]);
 
   // ── Pantry helpers ──────────────────────────────────────────────
-  const markUsed=(id:string)=>{
+  const markUsed=(id:string, partialQty?: number)=>{
     setConfetti(true); setTimeout(()=>setConfetti(false),2200);
     const item = pantry.find(i=>i.id===id);
-    const updatedPantry = pantry.filter(i=>i.id!==id);
-    const updatedAte = item ? [...ateLog,{id:uid(),name:item.name,emoji:item.emoji,price:item.price||0,date:new Date().toISOString()}] : ateLog;
+    if(!item) return;
+    let updatedPantry: PantryItem[];
+    let updatedAte: ItemLog[];
+    if(partialQty !== undefined && partialQty > 0 && partialQty < item.qty) {
+      // Reduce quantity only
+      const remaining = Math.round((item.qty - partialQty) * 100) / 100;
+      updatedPantry = pantry.map(i=>i.id===id ? {...i, qty: remaining} : i);
+      updatedAte = [...ateLog, {id:uid(), name:item.name, emoji:item.emoji, price: Math.round(item.price*(partialQty/item.qty)*100)/100, date: new Date().toISOString()}];
+    } else {
+      // Remove entirely
+      updatedPantry = pantry.filter(i=>i.id!==id);
+      updatedAte = [...ateLog, {id:uid(), name:item.name, emoji:item.emoji, price:item.price||0, date: new Date().toISOString()}];
+    }
     setPantry(updatedPantry); setAteLog(updatedAte);
     save({pantry:updatedPantry,ateLog:updatedAte});
   };
@@ -692,16 +708,32 @@ export default function App() {
         {step==='sources'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
             <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>How you&apos;ll add groceries</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Voice is ready now. More ways coming soon.</p>
-            {[['🎙️','Voice note','Tap and say what you bought',true],['📧','Email sync',`${region.groceryApps.slice(0,2).join(', ')} — Premium`,false],['📸','Scan receipt','Photo any paper bill — Premium',false]].map(([ic,lb,sub,on])=>(
-              <div key={lb as string} style={{background:on?'#EFF6FF':'var(--grayL)',border:`1.5px solid ${on?'#BFDBFE':'var(--border)'}`,borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
-                <span style={{fontSize:22}}>{ic}</span>
-                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{lb}</div><div style={{fontSize:11,color:'var(--gray)'}}>{sub}</div></div>
-                <div style={{width:34,height:19,borderRadius:10,background:on?'#22C55E':'#D1D5DB',display:'flex',alignItems:'center',flexShrink:0}}>
-                  <div style={{width:15,height:15,borderRadius:8,background:'#fff',marginLeft:on?17:2,boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
-                </div>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Voice is free. Unlock auto-sync for hands-free magic.</p>
+
+            {/* Voice — free */}
+            <div style={{background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
+              <span style={{fontSize:22}}>🎙️</span>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>Voice note <span style={{fontSize:10,background:'#22C55E',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:3}}>Free</span></div><div style={{fontSize:11,color:'var(--gray)'}}>Tap and say what you bought</div></div>
+              <div style={{width:34,height:19,borderRadius:10,background:'#22C55E',display:'flex',alignItems:'center',flexShrink:0}}>
+                <div style={{width:15,height:15,borderRadius:8,background:'#fff',marginLeft:17,boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
               </div>
-            ))}
+            </div>
+
+            {/* Email sync — premium, tappable */}
+            <div onClick={()=>setShowPremium(true)} style={{background:'#FFFBEB',border:'1.5px solid #FDE68A',borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9,cursor:'pointer'}}>
+              <span style={{fontSize:22}}>📧</span>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'#92400E'}}>Email auto-sync <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:3}}>👑 Premium</span></div><div style={{fontSize:11,color:'#B45309'}}>{region.groceryApps.slice(0,2).join(', ')} — auto-added</div></div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            {/* Scan receipt — premium, tappable */}
+            <div onClick={()=>setShowPremium(true)} style={{background:'#FFFBEB',border:'1.5px solid #FDE68A',borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9,cursor:'pointer'}}>
+              <span style={{fontSize:22}}>📸</span>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'#92400E'}}>Scan receipt <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:3}}>👑 Premium</span></div><div style={{fontSize:11,color:'#B45309'}}>Photo any paper bill or grocery screenshot</div></div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <p style={{fontSize:11,color:'var(--gray)',marginTop:10,textAlign:'center'}}>Tap email or scan to unlock with Premium →</p>
           </div>
         )}
 
@@ -740,7 +772,7 @@ export default function App() {
             <div style={{marginTop:20,background:'linear-gradient(135deg,#1E3A8A,#2563EB)',borderRadius:16,padding:20,textAlign:'center'}}>
               <div style={{fontSize:11,color:'#93C5FD',fontWeight:600,marginBottom:4,letterSpacing:1,textTransform:'uppercase'}}>After free trial</div>
               <div style={{fontSize:32,fontWeight:900,color:'#fff'}}>{region.monthlyPrice}<span style={{fontSize:14,fontWeight:500,opacity:.8}}>/month</span></div>
-              <div style={{fontSize:11,color:'#93C5FD',marginTop:2}}>Less than 10% of one {region.groceryApps[0]} order</div>
+              <div style={{fontSize:11,color:'#93C5FD',marginTop:2}}>Less than {Math.round(region.monthlyPriceNum/region.avgOrderSize*100)}% of one {region.groceryApps[0]} order</div>
             </div>
             <button className="btn-primary" onClick={()=>setObStep(s=>s+1)} style={{marginTop:16,fontSize:16,padding:16,background:'#22C55E'}}>
               Start 7-day free trial →
@@ -964,22 +996,42 @@ export default function App() {
       {/* Item action bottom sheet */}
       {actionItem&&(
         <>
-          <div onClick={()=>setActionItem(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:50}}/>
+          <div onClick={()=>{setActionItem(null);setUsedQty('');}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:50}}/>
           <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,background:'#fff',borderRadius:'20px 20px 0 0',padding:'20px 20px calc(20px + env(safe-area-inset-bottom))',zIndex:51,boxShadow:'0 -8px 40px rgba(0,0,0,.18)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
               <span style={{fontSize:32}}>{actionItem.emoji}</span>
               <div>
                 <div style={{fontWeight:900,fontSize:17,color:'var(--ink)'}}>{actionItem.name}</div>
                 <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{actionItem.qty}{actionItem.unit} · {fmtDays(daysLeft(actionItem.expiry))}</div>
               </div>
             </div>
-            <button onClick={()=>{markUsed(actionItem.id);setActionItem(null);}} style={{width:'100%',background:'#22C55E',border:'none',borderRadius:14,padding:'15px',fontSize:16,fontWeight:800,color:'#fff',fontFamily:'inherit',cursor:'pointer',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-              😋 Ate it
+            {/* Partial quantity input */}
+            <div style={{background:'var(--grayL)',borderRadius:12,padding:'10px 12px',marginBottom:14}}>
+              <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginBottom:8}}>HOW MUCH DID YOU USE?</p>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <input type="number" value={usedQty} onChange={e=>setUsedQty(e.target.value)}
+                  placeholder={`${actionItem.qty}`}
+                  style={{flex:1,fontSize:20,fontWeight:800,textAlign:'center',borderRadius:10,padding:'9px 8px',border:'1.5px solid var(--border)',background:'#fff'}}/>
+                <span style={{fontSize:14,color:'var(--gray)',fontWeight:600,flexShrink:0}}>{actionItem.unit}</span>
+                <button onClick={()=>setUsedQty(String(actionItem.qty))}
+                  style={{fontSize:12,background:'var(--white)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',color:'var(--navy)',fontWeight:700,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>All</button>
+              </div>
+              {usedQty && parseFloat(usedQty) < actionItem.qty && (
+                <p style={{fontSize:11,color:'#15803D',marginTop:6}}>✓ {Math.round((actionItem.qty - parseFloat(usedQty))*100)/100}{actionItem.unit} will stay in your fridge</p>
+              )}
+            </div>
+            <button onClick={()=>{
+              const qty = usedQty ? parseFloat(usedQty) : undefined;
+              markUsed(actionItem.id, qty);
+              setUsedQty('');
+              setActionItem(null);
+            }} style={{width:'100%',background:'#22C55E',border:'none',borderRadius:14,padding:'15px',fontSize:16,fontWeight:800,color:'#fff',fontFamily:'inherit',cursor:'pointer',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              {actionItem.cat==='Beverages'?'🥤 Drank it':'😋 Ate it'}
             </button>
-            <button onClick={()=>{markWasted(actionItem.id);setActionItem(null);}} style={{width:'100%',background:'#FEF2F2',border:'1.5px solid #FCA5A5',borderRadius:14,padding:'15px',fontSize:16,fontWeight:800,color:'#DC2626',fontFamily:'inherit',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            <button onClick={()=>{markWasted(actionItem.id);setUsedQty('');setActionItem(null);}} style={{width:'100%',background:'#FEF2F2',border:'1.5px solid #FCA5A5',borderRadius:14,padding:'15px',fontSize:16,fontWeight:800,color:'#DC2626',fontFamily:'inherit',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
               🗑 Threw it away
             </button>
-            <button onClick={()=>setActionItem(null)} style={{width:'100%',background:'none',border:'none',padding:'12px',fontSize:14,color:'var(--gray)',fontFamily:'inherit',cursor:'pointer',marginTop:2}}>Cancel</button>
+            <button onClick={()=>{setActionItem(null);setUsedQty('');}} style={{width:'100%',background:'none',border:'none',padding:'12px',fontSize:14,color:'var(--gray)',fontFamily:'inherit',cursor:'pointer',marginTop:2}}>Cancel</button>
           </div>
         </>
       )}
@@ -1401,7 +1453,7 @@ export default function App() {
           ))}
           <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:12,padding:14,marginBottom:16}}>
             <p style={{fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:8}}>💡 The math</p>
-            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One {region.groceryApps[0]} grocery order typically costs {fmt(region.avgTakeout*2)}+. FreshNudge is <strong>{region.monthlyPrice}</strong> — less than 10% of that. Cook more, order less.</p>
+            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One {region.groceryApps[0]} grocery order typically costs {fmt(region.avgOrderSize)}+. FreshNudge is <strong>{region.monthlyPrice}/month</strong> — just {Math.round(region.monthlyPriceNum/region.avgOrderSize*100)}% of that. Cook more, order less.</p>
           </div>
         </div>
         <div style={{padding:'12px 22px',paddingBottom:'max(28px,env(safe-area-inset-bottom))'}}>
