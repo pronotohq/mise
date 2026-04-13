@@ -37,10 +37,24 @@ export async function POST(req: NextRequest) {
       dietary?.allergies?.length ? `allergies: ${dietary.allergies.join(', ')}` : '',
     ].filter(Boolean).join(', ');
 
+    // Build cuisine guidance
+    const cuisines: string[] = dietary?.cuisines ?? [];
+    const cuisineMap: Record<string, string> = {
+      Indian:        'Indian home cooking — chapati, dal, sabzi, khichdi, poha, upma, sawaiyan (vermicelli), paratha, rajma, chole, aloo dishes, rice dishes. Everyday simple food, NOT restaurant-style.',
+      Asian:         'Asian home cooking — stir-fries, fried rice, noodle soups, congee, curries, tofu dishes. Quick and practical.',
+      Western:       'Western / Continental home cooking — pasta, sandwiches, wraps, simple salads, eggs, roasted vegetables, soups.',
+      Mexican:       'Mexican / Middle Eastern home cooking — wraps, grain bowls, hummus plates, kebabs, lentil soups.',
+      Mediterranean: 'Mediterranean home cooking — grain bowls, roasted vegetables, fish, legumes, olive oil-based dishes.',
+    };
+    const cuisineCtx = cuisines.length
+      ? `\nCuisine style (IMPORTANT — prioritise these): ${cuisines.map(c => cuisineMap[c] || c).join(' | ')}\nMix cuisines naturally — not every meal needs to be from the same style. Keep it practical and home-cooked, not fancy.\n`
+      : '\nOffer a practical everyday mix — simple home-cooked meals a busy person would actually make.\n';
+
     const prompt = `Generate exactly 3 ${PERIOD_TIME[period]} recipes using ONLY the ingredients listed below.
 
 Diet: ${dietCtx}
 Family size: ${dietary?.familySize ?? 2} people
+${cuisineCtx}
 ${exclusion}
 EXPIRING TODAY — use these first:
 ${expiring.length ? expiring.map((i: {name: string; qty: number; unit: string}) => `- ${i.name} (${i.qty}${i.unit})`).join('\n') : '(none expiring today)'}

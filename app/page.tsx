@@ -20,6 +20,7 @@ interface Profile {
   hasToddler: boolean; toddlerName: string; toddlerAge: number;
   familySize: number; allergies: string[];
   notifTimes: Record<string, string>;
+  cuisines: string[];
 }
 interface CookLog { id: string; name: string; period: string; date: string; }
 interface ItemLog  { id: string; name: string; emoji: string; price: number; date: string; }
@@ -144,6 +145,7 @@ export default function App() {
     name:'', city:'', isVeg:true, eatsEggs:true,
     hasToddler:false, toddlerName:'', toddlerAge:2, familySize:2, allergies:[],
     notifTimes:{breakfast:'07:30',lunch:'11:30',snack:'16:00',dinner:'17:30'},
+    cuisines:[],
   });
   const [family, setFamily] = useState<FamilyMember[]>([]);
   const [pantry, setPantry] = useState<PantryItem[]>([]);
@@ -355,7 +357,7 @@ export default function App() {
   };
 
   // ── Onboarding ──────────────────────────────────────────────────
-  const OB_STEPS = ['welcome','family','name','diet','sources','notifications','payment','done'];
+  const OB_STEPS = ['welcome','family','name','diet','cuisine','sources','notifications','payment','done'];
   const obPct = Math.round(((obStep+1)/OB_STEPS.length)*100);
 
   const completeOnboarding = () => {
@@ -657,6 +659,36 @@ export default function App() {
           </div>
         )}
 
+        {step==='cuisine'&&(
+          <div style={{flex:1,padding:'28px 22px'}}>
+            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What do you usually cook?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Pick all that apply — your meal suggestions will match your actual cooking style.</p>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {([
+                ['🇮🇳','Indian everyday','Dal, sabzi, roti, chawal, khichdi, poha, upma, sawaiyan','Indian'],
+                ['🍜','Asian','Stir fry, fried rice, noodles, curry, dim sum','Asian'],
+                ['🍝','Western / Continental','Pasta, sandwiches, salads, grilled food','Western'],
+                ['🌮','Mexican / Middle Eastern','Wraps, tacos, hummus, kebabs','Mexican'],
+                ['🥗','Mediterranean','Grain bowls, roasted veggies, fish, olive oil','Mediterranean'],
+              ] as [string,string,string,string][]).map(([flag,label,desc,val])=>{
+                const sel = profile.cuisines.includes(val);
+                return (
+                  <div key={val} onClick={()=>setProfile(p=>({...p,cuisines:sel?p.cuisines.filter(c=>c!==val):[...p.cuisines,val]}))}
+                    style={{display:'flex',alignItems:'center',gap:14,background:sel?'#EFF6FF':'var(--grayL)',border:`1.5px solid ${sel?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
+                    <span style={{fontSize:28,flexShrink:0}}>{flag}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:800,color:sel?'var(--navy)':'var(--ink)'}}>{label}</div>
+                      <div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>{desc}</div>
+                    </div>
+                    {sel&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,flexShrink:0}}>✓</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <p style={{fontSize:11,color:'var(--gray)',marginTop:14,textAlign:'center'}}>Select as many as you like — even 1 is enough.</p>
+          </div>
+        )}
+
         {step==='sources'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
             <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>How you&apos;ll add groceries</h2>
@@ -787,43 +819,60 @@ export default function App() {
             </button>
             {voiceTranscript&&<div style={{marginBottom:10,background:'var(--grayL)',borderRadius:12,padding:'10px 14px',fontSize:13,color:'var(--gray)',fontStyle:'italic'}}>🎙️ &ldquo;{voiceTranscript}&rdquo;</div>}
 
-            {/* Photo scan */}
+            {/* Photo scan — Premium */}
             <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{display:'none'}}
               onChange={e=>{ const f=e.target.files?.[0]; if(f) handlePhotoScan(f); e.target.value=''; }}/>
-            <button onClick={()=>photoInputRef.current?.click()} disabled={scanning}
-              style={{width:'100%',background:scanning?'#F0FDF4':'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10,opacity:scanning?.7:1}}>
-              <div style={{width:42,height:42,borderRadius:21,background:'#22C55E',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📸</div>
-              <div style={{textAlign:'left'}}>
-                <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>{scanning?'Scanning…':'📸 Photo / Receipt'}</div>
-                <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Snap a receipt or grocery app screenshot</div>
-              </div>
-            </button>
-
-            {/* Gmail auto-sync */}
-            {gmailConnected ? (
-              <button onClick={()=>syncGmailOrders(gmailToken)} disabled={gmailSyncing}
-                style={{width:'100%',background:'#F0FDF4',border:'1.5px solid #86EFAC',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',opacity:gmailSyncing?.7:1}}>
-                <div style={{width:42,height:42,borderRadius:21,background:'#22C55E',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+            {isPremium ? (
+              <button onClick={()=>photoInputRef.current?.click()} disabled={scanning}
+                style={{width:'100%',background:scanning?'#F0FDF4':'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10,opacity:scanning?.7:1}}>
+                <div style={{width:42,height:42,borderRadius:21,background:'#22C55E',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📸</div>
                 <div style={{textAlign:'left'}}>
-                  <div style={{fontSize:14,fontWeight:800,color:'#15803D'}}>{gmailSyncing?'Syncing orders…':'✅ Gmail connected'}</div>
-                  <div style={{fontSize:11,color:'#16A34A',marginTop:1}}>{gmailSyncing?'Reading your order emails…':'Tap to re-sync grocery orders'}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>{scanning?'Scanning…':'📸 Photo / Receipt'}</div>
+                  <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Snap a receipt or grocery app screenshot</div>
                 </div>
               </button>
             ) : (
-              <button onClick={connectGmail}
-                style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-                <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
-                <div style={{textAlign:'left'}}>
-                  <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Connect Gmail</div>
-                  <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Auto-import FoodPanda, Grab, Swiggy orders</div>
+              <button onClick={()=>setShowPremium(true)}
+                style={{width:'100%',background:'#FFFBEB',border:'1.5px solid #FCD34D',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10}}>
+                <div style={{width:42,height:42,borderRadius:21,background:'#F59E0B',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📸</div>
+                <div style={{flex:1,textAlign:'left'}}>
+                  <div style={{fontSize:14,fontWeight:800,color:'#92400E'}}>📸 Photo / Receipt <span style={{fontSize:11,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:4}}>👑 Premium</span></div>
+                  <div style={{fontSize:11,color:'#B45309',marginTop:1}}>Snap a receipt — items added automatically</div>
                 </div>
               </button>
             )}
-            {/* Fallback: paste email manually */}
-            <button onClick={()=>setShowEmail(true)}
-              style={{width:'100%',marginTop:6,background:'none',border:'none',fontSize:11,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit',padding:'4px',textDecoration:'underline'}}>
-              No Gmail? Paste order email text instead
-            </button>
+
+            {/* Gmail auto-sync — Premium */}
+            {isPremium ? (
+              gmailConnected ? (
+                <button onClick={()=>syncGmailOrders(gmailToken)} disabled={gmailSyncing}
+                  style={{width:'100%',background:'#F0FDF4',border:'1.5px solid #86EFAC',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',opacity:gmailSyncing?.7:1}}>
+                  <div style={{width:42,height:42,borderRadius:21,background:'#22C55E',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+                  <div style={{textAlign:'left'}}>
+                    <div style={{fontSize:14,fontWeight:800,color:'#15803D'}}>{gmailSyncing?'Syncing orders…':'✅ Gmail connected'}</div>
+                    <div style={{fontSize:11,color:'#16A34A',marginTop:1}}>{gmailSyncing?'Reading your order emails…':'Tap to re-sync grocery orders'}</div>
+                  </div>
+                </button>
+              ) : (
+                <button onClick={connectGmail}
+                  style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                  <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+                  <div style={{textAlign:'left'}}>
+                    <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Connect Gmail</div>
+                    <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>Auto-import FoodPanda, Grab, Swiggy orders</div>
+                  </div>
+                </button>
+              )
+            ) : (
+              <button onClick={()=>setShowPremium(true)}
+                style={{width:'100%',background:'#FFFBEB',border:'1.5px solid #FCD34D',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+                <div style={{flex:1,textAlign:'left'}}>
+                  <div style={{fontSize:14,fontWeight:800,color:'#92400E'}}>Email auto-sync <span style={{fontSize:11,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:4}}>👑 Premium</span></div>
+                  <div style={{fontSize:11,color:'#B45309',marginTop:1}}>FoodPanda, Grab, Swiggy auto-added from email</div>
+                </div>
+              </button>
+            )}
           </div>
         )}
 
