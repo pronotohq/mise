@@ -70,6 +70,30 @@ const EMOJIS: Record<string, string> = {
   dal:'🫘',lentil:'🫘',chana:'🫘',
 };
 
+// ── Pantry staples — never expire, don't track in fridge ──────────
+const STAPLES = new Set([
+  'salt','sugar','oil','cooking oil','olive oil','mustard oil','coconut oil','vegetable oil',
+  'atta','flour','maida','besan','turmeric','haldi','chilli powder','red chilli','cumin','jeera',
+  'coriander powder','garam masala','pepper','black pepper','baking soda','baking powder',
+  'vinegar','soy sauce','tea','coffee','instant coffee',
+]);
+function isStaple(name: string): boolean {
+  const lc = name.toLowerCase();
+  return STAPLES.has(lc) || [...STAPLES].some(s => lc.includes(s));
+}
+
+// ── Kitchen essentials bundles (one-tap add) ──────────────────────
+const ESSENTIALS: {name:string;emoji:string;cat:string;qty:number;unit:string}[] = [
+  {name:'Salt',emoji:'🧂',cat:'Pantry',qty:1,unit:'kg'},
+  {name:'Sugar',emoji:'🍬',cat:'Pantry',qty:1,unit:'kg'},
+  {name:'Cooking Oil',emoji:'🫒',cat:'Pantry',qty:1,unit:'L'},
+  {name:'Turmeric',emoji:'🟡',cat:'Pantry',qty:100,unit:'g'},
+  {name:'Cumin',emoji:'🫘',cat:'Pantry',qty:100,unit:'g'},
+  {name:'Red Chilli Powder',emoji:'🌶️',cat:'Pantry',qty:100,unit:'g'},
+  {name:'Tea',emoji:'🍵',cat:'Pantry',qty:250,unit:'g'},
+  {name:'Atta / Flour',emoji:'🌾',cat:'Pantry',qty:5,unit:'kg'},
+];
+
 const PERIODS = [
   {id:'breakfast',label:'Breakfast',emoji:'☀️',time:'7–9 AM',color:'#F59E0B',bg:'#FFFBEB',brd:'#FDE68A'},
   {id:'lunch',    label:'Lunch',    emoji:'🌤️',time:'12–2 PM',color:'#22C55E',bg:'#F0FDF4',brd:'#86EFAC'},
@@ -186,7 +210,11 @@ export default function App() {
   const [gmailSyncing, setGmailSyncing] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(false);
+  const [fridgeAuditDone, setFridgeAuditDone] = useState(false);
+  const [essentialsAdded, setEssentialsAdded] = useState(false);
+  const [addPath, setAddPath] = useState<'photo'|'voice'|'email'|null>(null);
   const photoInputRef = useRef<HTMLInputElement|null>(null);
+  const fridgeAuditRef = useRef<HTMLInputElement|null>(null);
   const recognitionRef = useRef<unknown>(null);
   const mediaRecorderRef = useRef<MediaRecorder|null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -360,7 +388,7 @@ export default function App() {
   };
 
   // ── Onboarding ──────────────────────────────────────────────────
-  const OB_STEPS = ['welcome','family','name','diet','cuisine','sources','notifications','payment','done'];
+  const OB_STEPS = ['welcome','family','name','diet','cuisine','paths','notifications','payment','done'];
   const obPct = Math.round(((obStep+1)/OB_STEPS.length)*100);
 
   const completeOnboarding = () => {
@@ -370,21 +398,11 @@ export default function App() {
       const cur = JSON.parse(localStorage.getItem('mise_v1')||'{}');
       if (!cur.joinDate) localStorage.setItem('mise_v1', JSON.stringify({...cur, joinDate: new Date().toISOString()}));
     } catch{}
-    // Seed demo pantry — prices scaled to user's region
-    const r = region.priceMultiplier;
-    const p = (inr: number) => Math.round(inr * r);
-    const demo: PantryItem[] = [
-      {id:uid(),name:'Spinach',  emoji:'🥬',cat:'Produce',qty:200,unit:'g',price:p(49),  expiry:expiryDate(0),expDays:0,src:'🎙️'},
-      {id:uid(),name:'Paneer',   emoji:'🧀',cat:'Dairy',  qty:250,unit:'g',price:p(95),  expiry:expiryDate(1),expDays:1,src:'🎙️'},
-      {id:uid(),name:'Milk',     emoji:'🥛',cat:'Dairy',  qty:1,  unit:'L',price:p(68),  expiry:expiryDate(1),expDays:1,src:'🎙️'},
-      {id:uid(),name:'Eggs',     emoji:'🥚',cat:'Protein',qty:12, unit:'pcs',price:p(85), expiry:expiryDate(5),expDays:5,src:'🎙️'},
-      {id:uid(),name:'Tomatoes', emoji:'🍅',cat:'Produce',qty:4,  unit:'pcs',price:p(35), expiry:expiryDate(3),expDays:3,src:'🎙️'},
-      {id:uid(),name:'Banana',   emoji:'🍌',cat:'Produce',qty:4,  unit:'pcs',price:p(30), expiry:expiryDate(3),expDays:3,src:'🎙️'},
-      {id:uid(),name:'Oats',     emoji:'🥣',cat:'Grains', qty:500,unit:'g',price:p(85),  expiry:expiryDate(90),expDays:90,src:'🎙️'},
-      {id:uid(),name:'Brown Rice',emoji:'🌾',cat:'Grains', qty:1,  unit:'kg',price:p(140), expiry:expiryDate(60),expDays:60,src:'🎙️'},
-      {id:uid(),name:'Onion',    emoji:'🧅',cat:'Produce',qty:3,  unit:'pcs',price:p(20), expiry:expiryDate(20),expDays:20,src:'🎙️'},
-    ];
+    // Start with empty fridge — user fills it via Fridge Audit, essentials, or voice
+    const demo: PantryItem[] = [];
     setPantry(demo);
+    setFridgeAuditDone(false);
+    setEssentialsAdded(false);
     const fam: FamilyMember[] = [
       {id:1,name:profile.name||'You',role:'Adult',age:30,avatar:'👤'},
     ];
@@ -417,6 +435,48 @@ export default function App() {
     });
     showToast(`✅ Added: ${newItems.map(i=>i.name).join(', ')}`);
   },[save]);
+
+  // ── Add kitchen essentials (one-tap) ────────────────────────────
+  const addEssentials = () => {
+    const items: PantryItem[] = ESSENTIALS.map(e => ({
+      id: uid(), name: e.name, emoji: e.emoji, cat: e.cat,
+      qty: e.qty, unit: e.unit, price: 0,
+      expiry: expiryDate(365), expDays: 365, src: '🧂',
+    }));
+    setPantry(p => {
+      const updated = [...items, ...p];
+      save({pantry: updated});
+      return updated;
+    });
+    setEssentialsAdded(true);
+    showToast('🧂 Kitchen essentials added!');
+  };
+
+  // ── Fridge audit photo handler ─────────────────────────────────
+  const handleFridgeAudit = async (file: File) => {
+    setScanning(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('dietary', JSON.stringify({isVeg: profile.isVeg, eatsEggs: profile.eatsEggs}));
+      fd.append('fridgeAudit', 'true');
+      const res = await fetch('/api/scan', {method: 'POST', body: fd});
+      const data = await res.json();
+      if (data.items?.length) {
+        addItems(data.items);
+        setFridgeAuditDone(true);
+        showToast(`📸 Found ${data.items.length} items in your fridge!`);
+        // Auto-navigate to meals to show "wow" moment
+        setTimeout(() => {
+          setTab('meals');
+          generateMeals('dinner', true);
+        }, 1500);
+      } else {
+        showToast('Could not detect items — try with the fridge door open');
+      }
+    } catch { showToast('Scan failed — try again'); }
+    finally { setScanning(false); }
+  };
 
   // ── Voice recording ─────────────────────────────────────────────
   const startVoice = async () => {
@@ -567,12 +627,14 @@ export default function App() {
     setTab('fridge');
   };
 
-  // ── Computed pantry groups ──────────────────────────────────────
-  const sortedPantry = [...pantry].sort((a,b)=>a.expDays-b.expDays);
+  // ── Computed pantry groups (staples separated) ──────────────────
+  const perishable  = pantry.filter(i => !isStaple(i.name) && i.cat !== 'Pantry');
+  const staples     = pantry.filter(i => isStaple(i.name) || i.cat === 'Pantry');
+  const sortedPantry = [...perishable].sort((a,b) => daysLeft(a.expiry) - daysLeft(b.expiry));
   const urgent   = sortedPantry.filter(i=>daysLeft(i.expiry)<=1);
   const expiring = sortedPantry.filter(i=>{const d=daysLeft(i.expiry);return d>1&&d<=3;});
   const fresh    = sortedPantry.filter(i=>daysLeft(i.expiry)>3);
-  const searched = search ? sortedPantry.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())) : null;
+  const searched = search ? pantry.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())) : null;
 
   // ── Nav helpers ─────────────────────────────────────────────────
   const navItems = [
@@ -705,35 +767,50 @@ export default function App() {
           </div>
         )}
 
-        {step==='sources'&&(
+        {step==='paths'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>How you&apos;ll add groceries</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Voice is free. Unlock auto-sync for hands-free magic.</p>
+            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>How do you want to<br/>keep your fridge updated?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Pick what works for you — you can always change later.</p>
 
-            {/* Voice — free */}
-            <div style={{background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
-              <span style={{fontSize:22}}>🎙️</span>
-              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>Voice note <span style={{fontSize:10,background:'#22C55E',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:3}}>Free</span></div><div style={{fontSize:11,color:'var(--gray)'}}>Tap and say what you bought</div></div>
-              <div style={{width:34,height:19,borderRadius:10,background:'#22C55E',display:'flex',alignItems:'center',flexShrink:0}}>
-                <div style={{width:15,height:15,borderRadius:8,background:'#fff',marginLeft:17,boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
+            {/* 📸 Photo */}
+            <div onClick={()=>setAddPath(addPath==='photo'?null:'photo')}
+              style={{background:addPath==='photo'?'#EFF6FF':'var(--grayL)',border:`2px solid ${addPath==='photo'?'var(--navy)':'var(--border)'}`,borderRadius:16,padding:'16px 14px',display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'pointer',transition:'all .2s'}}>
+              <div style={{width:48,height:48,borderRadius:14,background:addPath==='photo'?'var(--navy)':'#E2E8F0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>📸</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:800,color:'var(--ink)'}}>Photo my fridge</div>
+                <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Snap one photo of your open fridge — AI finds everything</div>
               </div>
+              {addPath==='photo'&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,flexShrink:0}}>✓</div>}
             </div>
 
-            {/* Email sync — premium, tappable */}
-            <div onClick={()=>setShowPremium(true)} style={{background:'#FFFBEB',border:'1.5px solid #FDE68A',borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9,cursor:'pointer'}}>
-              <span style={{fontSize:22}}>📧</span>
-              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'#92400E'}}>Email auto-sync <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:3}}>👑 Premium</span></div><div style={{fontSize:11,color:'#B45309'}}>{region.groceryApps.slice(0,2).join(', ')} — auto-added</div></div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+            {/* 🎙️ Voice */}
+            <div onClick={()=>setAddPath(addPath==='voice'?null:'voice')}
+              style={{background:addPath==='voice'?'#EFF6FF':'var(--grayL)',border:`2px solid ${addPath==='voice'?'var(--navy)':'var(--border)'}`,borderRadius:16,padding:'16px 14px',display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'pointer',transition:'all .2s'}}>
+              <div style={{width:48,height:48,borderRadius:14,background:addPath==='voice'?'var(--navy)':'#E2E8F0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>🎙️</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:800,color:'var(--ink)'}}>Voice</div>
+                <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Say &quot;2 mangoes, 400g curd, 1L milk&quot; — done</div>
+              </div>
+              {addPath==='voice'&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,flexShrink:0}}>✓</div>}
             </div>
 
-            {/* Scan receipt — premium, tappable */}
-            <div onClick={()=>setShowPremium(true)} style={{background:'#FFFBEB',border:'1.5px solid #FDE68A',borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9,cursor:'pointer'}}>
-              <span style={{fontSize:22}}>📸</span>
-              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'#92400E'}}>Scan receipt <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:3}}>👑 Premium</span></div><div style={{fontSize:11,color:'#B45309'}}>Photo any paper bill or grocery screenshot</div></div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+            {/* 📧 Auto-sync */}
+            <div onClick={()=>{setAddPath(addPath==='email'?null:'email');if(addPath!=='email'&&!isPremium)setShowPremium(true);}}
+              style={{background:addPath==='email'?'#FFFBEB':'var(--grayL)',border:`2px solid ${addPath==='email'?'#F59E0B':'var(--border)'}`,borderRadius:16,padding:'16px 14px',display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'pointer',transition:'all .2s'}}>
+              <div style={{width:48,height:48,borderRadius:14,background:addPath==='email'?'#F59E0B':'#E2E8F0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>📧</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:800,color:addPath==='email'?'#92400E':'var(--ink)'}}>Auto-sync from email <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:3}}>👑</span></div>
+                <div style={{fontSize:12,color:addPath==='email'?'#B45309':'var(--gray)',marginTop:2}}>{region.groceryApps.slice(0,2).join(', ')} orders auto-added</div>
+              </div>
+              {addPath==='email'&&<div style={{width:22,height:22,borderRadius:11,background:'#F59E0B',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,flexShrink:0}}>✓</div>}
             </div>
 
-            <p style={{fontSize:11,color:'var(--gray)',marginTop:10,textAlign:'center'}}>Tap email or scan to unlock with Premium →</p>
+            <p style={{fontSize:11,color:'var(--gray)',marginTop:6,textAlign:'center'}}>
+              {addPath==='photo'?'After setup, you\'ll snap your fridge — instant inventory!':
+               addPath==='voice'?'Free forever — just talk to add items.':
+               addPath==='email'?'Premium feature — 7-day free trial included.':
+               'Pick one to continue'}
+            </p>
           </div>
         )}
 
@@ -822,7 +899,7 @@ export default function App() {
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
           <div>
             <h1 style={{fontSize:26,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>My Fridge</h1>
-            <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{pantry.length} items · {urgent.length} expiring today</p>
+            <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{perishable.length} items{staples.length>0?` · ${staples.length} pantry`:''}{urgent.length>0?` · ${urgent.length} expiring today`:''}</p>
           </div>
           <button onClick={()=>setShowAdd(v=>!v)} className="btn-primary" style={{width:'auto',padding:'9px 14px',fontSize:13,gap:5}}>
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="1" x2="7.5" y2="14" stroke="#fff" strokeWidth="2" strokeLinecap="round"/><line x1="1" y1="7.5" x2="14" y2="7.5" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -962,11 +1039,74 @@ export default function App() {
               </div>
               {fresh.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)}
             </>}
-            {pantry.length===0&&<div style={{textAlign:'center',paddingTop:60}}>
-              <div style={{fontSize:52}}>🎉</div>
-              <p style={{fontWeight:800,fontSize:20,color:'var(--inkM)',marginTop:14}}>Fridge is clear!</p>
-              <p style={{fontSize:13,color:'var(--gray)',marginTop:6}}>Tap Add to log your groceries.</p>
-            </div>}
+            {/* Pantry staples section — collapsed, no expiry tracking */}
+            {staples.length>0&&<>
+              <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
+                <div style={{width:8,height:8,borderRadius:4,background:'#9CA3AF'}}/>
+                <span style={{fontWeight:800,fontSize:11,color:'var(--gray)',letterSpacing:.6}}>PANTRY SHELF — ALWAYS STOCKED</span>
+                <span className="pill pill-green">{staples.length}</span>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                {staples.map(i=>(
+                  <div key={i.id} style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:20,padding:'5px 12px',fontSize:12,fontWeight:600,color:'var(--inkM)',display:'flex',alignItems:'center',gap:4}}>
+                    <span>{i.emoji}</span>{i.name}
+                  </div>
+                ))}
+              </div>
+            </>}
+
+            {/* Empty fridge — wow "Getting Started" experience */}
+            {perishable.length===0&&(
+              <div style={{paddingTop:20}}>
+                <div style={{textAlign:'center',marginBottom:20}}>
+                  <div style={{fontSize:48}}>🧊</div>
+                  <p style={{fontWeight:900,fontSize:20,color:'var(--ink)',marginTop:10}}>Your fridge is waiting!</p>
+                  <p style={{fontSize:13,color:'var(--gray)',marginTop:4}}>Pick one to get started in under 30 seconds.</p>
+                </div>
+
+                {/* Fridge Audit — snap one photo */}
+                <input ref={fridgeAuditRef} type="file" accept="image/*" capture="environment" style={{display:'none'}}
+                  onChange={e=>{const f=e.target.files?.[0]; if(f) handleFridgeAudit(f); e.target.value='';}}/>
+                <button onClick={()=>fridgeAuditRef.current?.click()} disabled={scanning}
+                  style={{width:'100%',background:'linear-gradient(135deg,#1E3A8A,#2563EB)',border:'none',borderRadius:18,padding:'18px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10}}>
+                  <div style={{width:50,height:50,borderRadius:14,background:'rgba(255,255,255,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,flexShrink:0}}>📸</div>
+                  <div style={{textAlign:'left',flex:1}}>
+                    <div style={{fontSize:16,fontWeight:900,color:'#fff'}}>{scanning?'Scanning your fridge…':'Snap your fridge'}</div>
+                    <div style={{fontSize:12,color:'#93C5FD',marginTop:3}}>One photo → AI finds everything → instant meal ideas</div>
+                  </div>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+
+                {/* Kitchen essentials — one tap */}
+                {!essentialsAdded?(
+                  <button onClick={addEssentials}
+                    style={{width:'100%',background:'#FFFBEB',border:'1.5px solid #FDE68A',borderRadius:18,padding:'16px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10}}>
+                    <div style={{width:50,height:50,borderRadius:14,background:'#FEF3C7',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,flexShrink:0}}>🧂</div>
+                    <div style={{textAlign:'left',flex:1}}>
+                      <div style={{fontSize:15,fontWeight:800,color:'#92400E'}}>Add kitchen essentials</div>
+                      <div style={{fontSize:12,color:'#B45309',marginTop:2}}>Salt, sugar, oil, atta, spices — one tap</div>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                ):(
+                  <div style={{width:'100%',background:'#F0FDF4',border:'1.5px solid #86EFAC',borderRadius:18,padding:'14px 16px',display:'flex',alignItems:'center',gap:14,marginBottom:10}}>
+                    <span style={{fontSize:22}}>✅</span>
+                    <span style={{fontSize:14,fontWeight:700,color:'#15803D'}}>Kitchen essentials added!</span>
+                  </div>
+                )}
+
+                {/* Voice quick-add */}
+                <button onClick={()=>{setShowAdd(true);setTimeout(startVoice,300);}}
+                  style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:18,padding:'16px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10}}>
+                  <div style={{width:50,height:50,borderRadius:14,background:'#EFF6FF',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,flexShrink:0}}>🎙️</div>
+                  <div style={{textAlign:'left',flex:1}}>
+                    <div style={{fontSize:15,fontWeight:800,color:'var(--ink)'}}>Tell me what you bought</div>
+                    <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Voice add — say it and it&apos;s logged</div>
+                  </div>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--gray)" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1248,10 +1388,12 @@ export default function App() {
       return {label:'The Everyday Cook',desc:'Consistent, reliable, no fuss.',emoji:'🍳'};
     })();
 
-    // ── Waste cost this month ────────────────────
+    // ── Waste cost this month (capped per item to avoid stale INR values) ──
     const thisMonth = new Date(); thisMonth.setDate(1); thisMonth.setHours(0,0,0,0);
     const wasteThisMonth = wasteLog.filter(w=>new Date(w.date)>=thisMonth);
-    const wasteCost = wasteThisMonth.reduce((a,w)=>a+w.price,0);
+    // Cap individual item waste price to avg takeout cost (sanity check for old unscaled data)
+    const maxItemWaste = region.avgTakeout;
+    const wasteCost = wasteThisMonth.reduce((a,w)=>a+Math.min(w.price, maxItemWaste),0);
 
     return (
       <div className="screen" style={{background:'var(--cream)'}}>

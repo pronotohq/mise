@@ -1,9 +1,11 @@
 {
   "functions": {
-    "app/api/transcribe/route.ts": { "maxDuration": 30 },
-    "app/api/meals/route.ts":      { "maxDuration": 30 },
-    "app/api/scan/route.ts":       { "maxDuration": 45 },
-    "app/api/email-sync/route.ts":  { "maxDuration": 30 },
-    "app/api/gmail-sync/route.ts":  { "maxDuration": 60 }
+    "app/api/transcribe/route.ts":             { "maxDuration": 45 },
+    "app/api/meals/route.ts":                  { "maxDuration": 45 },
+    "app/api/scan/route.ts":                   { "maxDuration": 60 },
+    "app/api/email-sync/route.ts":             { "maxDuration": 45 },
+    "app/api/gmail-sync/route.ts":             { "maxDuration": 90 },
+    "app/api/inbound-email/generate/route.ts": { "maxDuration": 10 },
+    "app/api/inbound-email/webhook/route.ts":  { "maxDuration": 45 }
   }
 }
