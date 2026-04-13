@@ -23,6 +23,25 @@ interface Profile {
 }
 interface CookLog { id: string; name: string; period: string; date: string; }
 interface ItemLog  { id: string; name: string; emoji: string; price: number; date: string; }
+interface Region   { symbol: string; avgTakeout: number; groceryApps: string[]; monthlyPrice: string; }
+
+// ── Region / currency map ──────────────────────────────────────────
+const REGIONS: Record<string,Region> = {
+  IN: { symbol:'₹',   avgTakeout:350, monthlyPrice:'₹299',   groceryApps:['Swiggy Instamart','Blinkit','Zepto','BigBasket','Amazon Fresh India'] },
+  SG: { symbol:'S$',  avgTakeout:20,  monthlyPrice:'S$5.99', groceryApps:['FoodPanda','GrabMart','RedMart','NTUC FairPrice Online','Amazon Fresh SG'] },
+  US: { symbol:'$',   avgTakeout:18,  monthlyPrice:'$4.99',  groceryApps:['Instacart','Amazon Fresh','DoorDash Grocery','Walmart Grocery'] },
+  GB: { symbol:'£',   avgTakeout:15,  monthlyPrice:'£3.99',  groceryApps:['Ocado','Tesco','Sainsbury\'s Online','Amazon Fresh UK'] },
+  AU: { symbol:'A$',  avgTakeout:25,  monthlyPrice:'A$6.99', groceryApps:['Woolworths Online','Coles Online','Amazon Fresh AU'] },
+  AE: { symbol:'AED ',avgTakeout:60,  monthlyPrice:'AED 18', groceryApps:['Noon','Carrefour Online','Amazon Fresh UAE','Talabat Mart'] },
+  MY: { symbol:'RM',  avgTakeout:25,  monthlyPrice:'RM 18',  groceryApps:['FoodPanda','GrabMart','Jaya Grocer Online'] },
+  CA: { symbol:'CA$', avgTakeout:20,  monthlyPrice:'CA$5.99',groceryApps:['Instacart','Amazon Fresh CA','Walmart Grocery CA'] },
+};
+const DEFAULT_REGION = REGIONS['IN'];
+function detectRegion(): Region {
+  if(typeof navigator==='undefined') return DEFAULT_REGION;
+  const cc = (navigator.language||'en-IN').split('-')[1]?.toUpperCase()||'IN';
+  return REGIONS[cc] ?? DEFAULT_REGION;
+}
 
 // ── Constants ──────────────────────────────────────────────────────
 const SHELF: Record<string, number> = {
@@ -132,6 +151,9 @@ export default function App() {
   const [wasteLog, setWasteLog] = useState<ItemLog[]>([]);
   const [ateLog,   setAteLog]   = useState<ItemLog[]>([]);
   const [isPremium, setIsPremium] = useState(false);
+  const [region,    setRegion]    = useState<Region>(DEFAULT_REGION);
+  useEffect(()=>{ setRegion(detectRegion()); },[]);
+  const fmt = (n:number) => `${region.symbol}${n.toLocaleString(undefined,{maximumFractionDigits:0})}`;
 
   // ── UI state ────────────────────────────────────────────────────
   const [tab, setTab] = useState('fridge');
@@ -489,7 +511,7 @@ export default function App() {
           <div style={{flex:1,padding:'28px 22px'}}>
             <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>How you&apos;ll add groceries</h2>
             <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Voice is ready now. More ways coming soon.</p>
-            {[['🎙️','Voice note','Tap and say what you bought',true],['📧','Email sync','Amazon, Swiggy, Blinkit — Premium v2',false],['📸','Scan receipt','Photo any paper bill — Premium v2',false]].map(([ic,lb,sub,on])=>(
+            {[['🎙️','Voice note','Tap and say what you bought',true],['📧','Email sync',`${region.groceryApps.slice(0,2).join(', ')} — Premium`,false],['📸','Scan receipt','Photo any paper bill — Premium',false]].map(([ic,lb,sub,on])=>(
               <div key={lb as string} style={{background:on?'#EFF6FF':'var(--grayL)',border:`1.5px solid ${on?'#BFDBFE':'var(--border)'}`,borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
                 <span style={{fontSize:22}}>{ic}</span>
                 <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{lb}</div><div style={{fontSize:11,color:'var(--gray)'}}>{sub}</div></div>
@@ -530,8 +552,8 @@ export default function App() {
             ))}
             <div style={{marginTop:20,background:'linear-gradient(135deg,#1E3A8A,#2563EB)',borderRadius:16,padding:20,textAlign:'center'}}>
               <div style={{fontSize:11,color:'#93C5FD',fontWeight:600,marginBottom:4,letterSpacing:1,textTransform:'uppercase'}}>After free trial</div>
-              <div style={{fontSize:32,fontWeight:900,color:'#fff'}}>₹299<span style={{fontSize:14,fontWeight:500,opacity:.8}}>/month</span></div>
-              <div style={{fontSize:11,color:'#93C5FD',marginTop:2}}>≈ the cost of one takeaway order</div>
+              <div style={{fontSize:32,fontWeight:900,color:'#fff'}}>{region.monthlyPrice}<span style={{fontSize:14,fontWeight:500,opacity:.8}}>/month</span></div>
+              <div style={{fontSize:11,color:'#93C5FD',marginTop:2}}>≈ the cost of one {region.groceryApps[0]} order</div>
             </div>
             <button className="btn-primary" onClick={()=>setObStep(s=>s+1)} style={{marginTop:16,fontSize:16,padding:16,background:'#22C55E'}}>
               Start 7-day free trial →
@@ -867,7 +889,7 @@ export default function App() {
     const total = pantry.reduce((a,i)=>a+(i.price||0),0);
 
     // ── Money saved vs takeout ──────────────────
-    const AVG_TAKEOUT = 350;
+    const AVG_TAKEOUT = region.avgTakeout;
     const moneySaved = cookLog.length * AVG_TAKEOUT;
 
     // ── Cook streak ─────────────────────────────
@@ -921,13 +943,26 @@ export default function App() {
         </div>
         <div style={{overflowY:'auto',padding:'4px 16px 32px'}}>
 
-          {/* ── Hero: money saved ── */}
-          <div style={{background:'linear-gradient(135deg,#14532D,#166534)',borderRadius:20,padding:20,marginBottom:12}}>
+          {/* ── Hero: money saved — PREMIUM only, teaser for free ── */}
+          <div style={{background:'linear-gradient(135deg,#14532D,#166534)',borderRadius:20,padding:20,marginBottom:12,position:'relative',overflow:'hidden'}}>
             <p style={{fontSize:11,color:'#86EFAC',fontWeight:700,letterSpacing:.6}}>SAVED VS ORDERING IN</p>
-            <p style={{fontSize:38,fontWeight:900,color:'#fff',marginTop:4}}>₹{moneySaved.toLocaleString()}</p>
-            <p style={{fontSize:13,color:'#BBF7D0',marginTop:2}}>{cookLog.length} home-cooked meals · avg ₹{AVG_TAKEOUT} saved each</p>
+            {isPremium?(
+              <>
+                <p style={{fontSize:38,fontWeight:900,color:'#fff',marginTop:4}}>{fmt(moneySaved)}</p>
+                <p style={{fontSize:13,color:'#BBF7D0',marginTop:2}}>{cookLog.length} home-cooked meals · avg {fmt(AVG_TAKEOUT)} saved each</p>
+                <p style={{fontSize:10,color:'#6EE7B7',marginTop:4}}>Based on avg local takeout cost · update in settings</p>
+              </>
+            ):(
+              <>
+                <p style={{fontSize:38,fontWeight:900,color:'#fff',marginTop:4,filter:'blur(6px)',userSelect:'none'}}>••••</p>
+                <p style={{fontSize:13,color:'#BBF7D0',marginTop:2}}>{cookLog.length} meals cooked at home</p>
+                <button onClick={()=>setShowPremium(true)} style={{marginTop:8,background:'#22C55E',border:'none',borderRadius:10,padding:'7px 14px',fontSize:12,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit'}}>
+                  See how much you saved →
+                </button>
+              </>
+            )}
             <div style={{display:'flex',gap:20,marginTop:14}}>
-              {[[urgent.length,'expire today'],[pantry.filter(i=>daysLeft(i.expiry)<=3).length,'use in 3 days'],[`₹${total.toLocaleString()}`, 'in fridge now']].map(([v,l])=>(
+              {[[urgent.length,'expire today'],[pantry.filter(i=>daysLeft(i.expiry)<=3).length,'use in 3 days'],[fmt(total),'in fridge now']].map(([v,l])=>(
                 <div key={String(l)}><div style={{fontWeight:900,fontSize:16,color:'#fff'}}>{v}</div><div style={{fontSize:10,color:'#86EFAC'}}>{l}</div></div>
               ))}
             </div>
@@ -974,12 +1009,16 @@ export default function App() {
               <>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
                   <div>
-                    <div style={{fontSize:11,color:'var(--gray)'}}>thrown away this month</div>
-                    <div style={{fontSize:22,fontWeight:900,color:'#DC2626'}}>₹{wasteCost.toLocaleString()}</div>
+                    <div style={{fontSize:11,color:'var(--gray)'}}>items wasted this month</div>
+                    <div style={{fontSize:22,fontWeight:900,color:'#DC2626'}}>{wasteThisMonth.length}</div>
                   </div>
                   <div style={{textAlign:'right'}}>
-                    <div style={{fontSize:11,color:'var(--gray)'}}>items wasted</div>
-                    <div style={{fontSize:22,fontWeight:900,color:'#DC2626'}}>{wasteThisMonth.length}</div>
+                    <div style={{fontSize:11,color:'var(--gray)'}}>cost of waste</div>
+                    {isPremium?(
+                      <div style={{fontSize:22,fontWeight:900,color:'#DC2626'}}>{fmt(wasteCost)}</div>
+                    ):(
+                      <button onClick={()=>setShowPremium(true)} style={{background:'#FEE2E2',border:'1px solid #FCA5A5',borderRadius:8,padding:'4px 10px',fontSize:12,fontWeight:700,color:'#DC2626',cursor:'pointer',fontFamily:'inherit'}}>Unlock 👑</button>
+                    )}
                   </div>
                 </div>
                 {worstItem&&(
@@ -1075,12 +1114,19 @@ export default function App() {
             <p style={{fontSize:13,color:'var(--gray)',marginTop:4}}>Your kitchen, on autopilot.</p>
           </div>
           <div style={{background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'2px solid #F59E0B',borderRadius:16,padding:'14px 16px',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <div><span style={{fontSize:34,fontWeight:900,color:'#92400E'}}>₹299</span><span style={{fontSize:14,color:'#B45309',fontWeight:600}}>/month</span></div>
+            <div><span style={{fontSize:34,fontWeight:900,color:'#92400E'}}>{region.monthlyPrice}</span><span style={{fontSize:14,color:'#B45309',fontWeight:600}}>/month</span></div>
             <div style={{textAlign:'right'}}><p style={{fontSize:12,color:'#B45309',fontWeight:700}}>7-day free trial</p><p style={{fontSize:11,color:'#D97706'}}>Cancel anytime</p></div>
           </div>
         </div>
         <div className="modal-body" style={{padding:'0 22px'}}>
-          {[['📧','Email auto-sync','Amazon, Swiggy, Blinkit, Foodpanda'],['🔔','Daily meal push','All 4 meals sent to you automatically'],['👶','Child safety filter','Every recipe pre-checked for toddler safety'],['📅','7-day meal plan','Full week planned every Sunday'],['📊','Spending insights','Waste tracking and efficiency score'],['🌍','All grocery apps','Zepto, BigBasket, Instacart, RedMart & more']].map(([ic,lb,sub])=>(
+          {[
+            ['📧','Email auto-sync',region.groceryApps.slice(0,3).join(', ')],
+            ['💰','Real savings tracking',`See exactly how much you save vs ${region.groceryApps[0]}`],
+            ['🔔','Daily meal push','All 4 meals sent to you automatically'],
+            ['👶','Child safety filter','Every recipe pre-checked for toddler safety'],
+            ['📅','7-day meal plan','Full week planned every Sunday'],
+            ['📊','Full spending breakdown','Waste cost, category trends, monthly report'],
+          ].map(([ic,lb,sub])=>(
             <div key={lb} style={{display:'flex',alignItems:'flex-start',gap:12,paddingBottom:12,marginBottom:12,borderBottom:'1px solid var(--border)'}}>
               <div style={{width:34,height:34,borderRadius:10,background:'#FFFBEB',border:'1px solid #FDE68A',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>{ic}</div>
               <div style={{flex:1}}><p style={{fontWeight:700,fontSize:13,color:'var(--ink)'}}>{lb}</p><p style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{sub}</p></div>
@@ -1089,7 +1135,7 @@ export default function App() {
           ))}
           <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:12,padding:14,marginBottom:16}}>
             <p style={{fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:8}}>💡 The math</p>
-            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One unnecessary Swiggy/Deliveroo order = ₹600–800. FreshNudge costs <strong>₹299/month</strong>. Stop one delivery order and the app pays for itself.</p>
+            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One {region.groceryApps[0]} order = {fmt(region.avgTakeout*2)}+. FreshNudge costs <strong>{region.monthlyPrice}</strong>. Skip one delivery and the app pays for itself.</p>
           </div>
         </div>
         <div style={{padding:'12px 22px',paddingBottom:'max(28px,env(safe-area-inset-bottom))'}}>
