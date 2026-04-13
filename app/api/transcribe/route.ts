@@ -19,8 +19,8 @@ export async function POST(req: NextRequest) {
       const transcription = await openai.audio.transcriptions.create({
         model: 'whisper-1',
         file:  audio,
-        language: 'en',
-        prompt: 'Grocery items list. May include quantities like grams, kg, litres, pieces.',
+        // no language lock — Whisper auto-detects and handles code-switching (Hinglish, Spanglish, etc.)
+        prompt: 'Grocery items list. May include quantities like grams, kg, litres, pieces. Speaker may mix Hindi, Spanish, or other languages with English.',
       });
       transcript = transcription.text;
     }
@@ -48,8 +48,11 @@ Rules:
 - emoji: one relevant emoji
 
 Diet context: ${dietary.isVeg ? 'vegetarian' : 'omnivore'}${dietary.eatsEggs ? ', eats eggs' : ''}
-Ignore filler words like "bought", "got", "picked up", "some".
-Handle Hindi grocery words: doodh=Milk, paneer=Paneer, aloo=Potato, pyaaz=Onion, dahi=Curd, atta=Flour`
+Ignore filler words like "bought", "got", "picked up", "some", "aur", "y", "und".
+The user may speak in mixed languages — extract items regardless of language used.
+Hindi: doodh=Milk, paneer=Paneer, aloo=Potato, pyaaz=Onion, dahi=Curd/Yogurt, atta=Flour, chawal=Rice, dal=Lentils, tamatar=Tomato, adrak=Ginger, lehsun=Garlic, namak=Salt, tel=Oil, sabzi=Vegetables, gosht=Meat, murgh=Chicken, machli=Fish, besan=Chickpea flour, maida=White flour, cheeni=Sugar, chai=Tea.
+Spanish: leche=Milk, huevos=Eggs, pollo=Chicken, carne=Meat, arroz=Rice, frijoles=Beans, tomate=Tomato, cebolla=Onion, ajo=Garlic, aceite=Oil, pan=Bread, queso=Cheese, manzana=Apple, plátano=Banana, naranja=Orange, zanahoria=Carrot, papa=Potato, azúcar=Sugar, sal=Salt, mantequilla=Butter.
+Arabic: laban=Milk, bayd=Eggs, dajaj=Chicken, lahm=Meat, ruz=Rice, zayt=Oil, khubz=Bread, jibn=Cheese, tuffah=Apple, mawz=Banana, bassal=Onion, toom=Garlic, sukkar=Sugar,ملح=Salt.`
       }, {
         role: 'user',
         content: `Extract grocery items from: "${transcript}"`

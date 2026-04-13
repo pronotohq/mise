@@ -97,46 +97,21 @@ function Confetti({on}:{on:boolean}) {
 }
 
 // ── Swipeable Pantry Row ───────────────────────────────────────────
-function PantryRow({item,onUsed,onWasted,onEditExpiry}:{item:PantryItem;onUsed:(id:string)=>void;onWasted:(id:string)=>void;onEditExpiry:(item:PantryItem)=>void}) {
-  const [dx,setDx]=useState(0),[gone,setGone]=useState(false);
-  const sX=useRef<number|null>(null),drag=useRef(false);
+function PantryRow({item,onTap,onEditExpiry}:{item:PantryItem;onTap:(item:PantryItem)=>void;onEditExpiry:(item:PantryItem)=>void}) {
   const dl = daysLeft(item.expiry);
   const urgent = dl <= 1;
-
-  const start=(x:number)=>{sX.current=x;drag.current=true;};
-  const move=(x:number)=>{if(!drag.current)return;setDx(Math.max(-115,Math.min(115,x-sX.current!)));};
-  const end=()=>{
-    if(!drag.current)return;drag.current=false;
-    if(dx>80){setGone(true);setTimeout(()=>onUsed(item.id),280);}
-    else if(dx<-80){setGone(true);setTimeout(()=>onWasted(item.id),280);}
-    else setDx(0);
-  };
-
-  if(gone) return null;
-
-  const gn=dx>20,rd=dx<-20;
   return (
-    <div className="swipe-row" style={{marginBottom:8}}>
-      <div className="swipe-bg" style={{background:gn?'linear-gradient(90deg,#86EFAC,#22C55E)':rd?'linear-gradient(270deg,#EF4444,#DC2626)':'#F0F2F5'}}>
-        <div style={{display:'flex',alignItems:'center',gap:6,color:'#14532D',fontWeight:800,fontSize:13}}>✓ Used!</div>
-        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,color:'#7F1D1D',fontWeight:800,fontSize:13}}>Wasted 🗑</div>
-      </div>
-      <div
-        className="swipe-card"
-        style={{transform:`translateX(${dx}px)`,transition:drag.current?'none':'transform .28s cubic-bezier(.34,1.56,.64,1)',borderColor:urgent?'#FCA5A540':'var(--border)'}}
-        onMouseDown={e=>start(e.clientX)} onMouseMove={e=>{if(e.buttons)move(e.clientX);}} onMouseUp={end} onMouseLeave={end}
-        onTouchStart={e=>start(e.touches[0].clientX)} onTouchMove={e=>{e.preventDefault();move(e.touches[0].clientX);}} onTouchEnd={end}
-      >
-        <span style={{fontSize:24}}>{item.emoji}</span>
-        <div style={{flex:1}}>
-          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
-            <span style={{fontWeight:800,fontSize:14,color:'var(--ink)'}}>{item.name}</span>
-            <span className={urgent?'pill pill-red':'pill pill-green'}>{urgent?'⚠ ':''}{fmtDays(dl)}</span>
-          </div>
-          <span style={{fontSize:11,color:'var(--gray)'}}>{item.qty}{item.unit} · {item.src}</span>
+    <div style={{display:'flex',alignItems:'center',gap:10,background:'var(--white)',border:`1.5px solid ${urgent?'#FCA5A540':'var(--border)'}`,borderRadius:14,padding:'11px 12px',marginBottom:8,cursor:'pointer'}}
+      onClick={()=>onTap(item)}>
+      <span style={{fontSize:24}}>{item.emoji}</span>
+      <div style={{flex:1}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
+          <span style={{fontWeight:800,fontSize:14,color:'var(--ink)'}}>{item.name}</span>
+          <span className={urgent?'pill pill-red':'pill pill-green'}>{urgent?'⚠ ':''}{fmtDays(dl)}</span>
         </div>
-        <button onClick={()=>onEditExpiry(item)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--gray)',fontSize:11,fontWeight:700,textDecoration:'underline',padding:'4px',flexShrink:0}}>edit</button>
+        <span style={{fontSize:11,color:'var(--gray)'}}>{item.qty}{item.unit} · {item.src}</span>
       </div>
+      <button onClick={e=>{e.stopPropagation();onEditExpiry(item);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--gray)',fontSize:11,fontWeight:700,textDecoration:'underline',padding:'4px',flexShrink:0}}>edit</button>
     </div>
   );
 }
@@ -172,6 +147,7 @@ export default function App() {
   const [newExpiryDays, setNewExpiryDays] = useState('');
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState('');
+  const [actionItem, setActionItem] = useState<PantryItem|null>(null);
   const recognitionRef = useRef<unknown>(null);
   const mediaRecorderRef = useRef<MediaRecorder|null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -270,7 +246,7 @@ export default function App() {
     if(SR) {
       const rec = new SR();
       recognitionRef.current = rec;
-      rec.lang = 'en-IN';
+      rec.lang = navigator.language || '';   // auto-detect from device locale
       rec.interimResults = false;
       rec.onresult = async (e: {results: {[0]: {[0]: {transcript: string}}}}) => {
         const text = e.results[0][0].transcript;
@@ -641,9 +617,7 @@ export default function App() {
 
         {/* Swipe hint */}
         {!search&&<div style={{display:'flex',justifyContent:'center',gap:8,fontSize:11,marginBottom:4}}>
-          <span style={{color:'var(--sage)',fontWeight:700}}>← Swipe: Used ✓</span>
-          <span style={{color:'var(--gray)'}}>·</span>
-          <span style={{color:'var(--red)',fontWeight:700}}>Wasted ✗ →</span>
+          <span style={{color:'var(--gray)',fontSize:11}}>Tap any item to mark it</span>
         </div>}
       </div>
 
@@ -652,7 +626,7 @@ export default function App() {
         {searched ? (
           searched.length===0
             ? <p style={{textAlign:'center',padding:'40px',color:'var(--gray)'}}>&ldquo;{search}&rdquo; not in fridge</p>
-            : searched.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)
+            : searched.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)
         ) : (
           <>
             {urgent.length>0&&<>
@@ -661,7 +635,7 @@ export default function App() {
                 <span style={{fontWeight:800,fontSize:11,color:'var(--red)',letterSpacing:.6}}>EXPIRES TODAY — COOK FIRST</span>
                 <span className="pill pill-red">{urgent.length}</span>
               </div>
-              {urgent.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)}
+              {urgent.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)}
             </>}
             {expiring.length>0&&<>
               <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
@@ -669,7 +643,7 @@ export default function App() {
                 <span style={{fontWeight:800,fontSize:11,color:'var(--goldD)',letterSpacing:.6}}>EXPIRING IN 2–3 DAYS</span>
                 <span className="pill pill-amber">{expiring.length}</span>
               </div>
-              {expiring.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)}
+              {expiring.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)}
             </>}
             {fresh.length>0&&<>
               <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
@@ -677,7 +651,7 @@ export default function App() {
                 <span style={{fontWeight:800,fontSize:11,color:'#15803D',letterSpacing:.6}}>FRESH & STOCKED</span>
                 <span className="pill pill-green">{fresh.length}</span>
               </div>
-              {fresh.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)}
+              {fresh.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry}/>)}
             </>}
             {pantry.length===0&&<div style={{textAlign:'center',paddingTop:60}}>
               <div style={{fontSize:52}}>🎉</div>
@@ -687,6 +661,29 @@ export default function App() {
           </>
         )}
       </div>
+
+      {/* Item action bottom sheet */}
+      {actionItem&&(
+        <>
+          <div onClick={()=>setActionItem(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:50}}/>
+          <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,background:'#fff',borderRadius:'20px 20px 0 0',padding:'20px 20px calc(20px + env(safe-area-inset-bottom))',zIndex:51,boxShadow:'0 -8px 40px rgba(0,0,0,.18)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+              <span style={{fontSize:32}}>{actionItem.emoji}</span>
+              <div>
+                <div style={{fontWeight:900,fontSize:17,color:'var(--ink)'}}>{actionItem.name}</div>
+                <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{actionItem.qty}{actionItem.unit} · {fmtDays(daysLeft(actionItem.expiry))}</div>
+              </div>
+            </div>
+            <button onClick={()=>{markUsed(actionItem.id);setActionItem(null);}} style={{width:'100%',background:'#22C55E',border:'none',borderRadius:14,padding:'15px',fontSize:16,fontWeight:800,color:'#fff',fontFamily:'inherit',cursor:'pointer',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              😋 Ate it
+            </button>
+            <button onClick={()=>{markWasted(actionItem.id);setActionItem(null);}} style={{width:'100%',background:'#FEF2F2',border:'1.5px solid #FCA5A5',borderRadius:14,padding:'15px',fontSize:16,fontWeight:800,color:'#DC2626',fontFamily:'inherit',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              🗑 Threw it away
+            </button>
+            <button onClick={()=>setActionItem(null)} style={{width:'100%',background:'none',border:'none',padding:'12px',fontSize:14,color:'var(--gray)',fontFamily:'inherit',cursor:'pointer',marginTop:2}}>Cancel</button>
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -836,22 +833,17 @@ export default function App() {
           <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
             {cooking.ingredients_used?.map(i=><span key={i.name} style={{background:'var(--grayL)',borderRadius:20,padding:'4px 12px',fontSize:12,fontWeight:600,color:'var(--inkM)'}}>{i.name} {i.qty}</span>)}
           </div>
-          {/* Progress dots */}
-          <div style={{display:'flex',justifyContent:'center',gap:5,marginBottom:14}}>
-            {steps.map((_,i)=><div key={i} style={{height:6,borderRadius:3,background:i<=cookStep?'var(--navy)':'var(--border)',width:i===cookStep?22:6,transition:'all .2s'}}/>)}
-          </div>
-          {/* Current step */}
-          <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:14,padding:16,marginBottom:16}} key={cookStep}>
-            <div style={{fontSize:10,fontWeight:700,color:'var(--navyD)',letterSpacing:.5,marginBottom:8}}>STEP {cookStep+1} OF {steps.length}</div>
-            <div style={{fontSize:15,color:'var(--ink)',lineHeight:1.6}}>{steps[cookStep]}</div>
-          </div>
-          {/* Navigation */}
-          <div style={{display:'flex',gap:10}}>
-            {cookStep>0&&<button onClick={()=>setCookStep(s=>s-1)} style={{flex:1,border:'1px solid var(--border)',borderRadius:12,padding:12,fontWeight:700,fontSize:14,cursor:'pointer',background:'var(--white)',color:'var(--navy)',fontFamily:'inherit'}}>← Back</button>}
-            <button onClick={()=>cookStep<steps.length-1?setCookStep(s=>s+1):doneCooking()} style={{flex:2,background:cookStep<steps.length-1?'var(--navy)':cfg.color,border:'none',borderRadius:12,padding:12,fontWeight:800,fontSize:14,color:'#fff',cursor:'pointer',fontFamily:'inherit'}}>
-              {cookStep<steps.length-1?'Next →':'✓ Done — update fridge'}
-            </button>
-          </div>
+          {/* All steps */}
+          <div style={{fontWeight:700,fontSize:11,color:'var(--gray)',letterSpacing:.6,marginBottom:10}}>METHOD — {steps.length} STEPS</div>
+          {steps.map((s,i)=>(
+            <div key={i} style={{display:'flex',gap:12,marginBottom:14,alignItems:'flex-start'}}>
+              <div style={{width:26,height:26,borderRadius:13,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:900,flexShrink:0,marginTop:1}}>{i+1}</div>
+              <div style={{fontSize:14,color:'var(--ink)',lineHeight:1.65,paddingTop:3}}>{s}</div>
+            </div>
+          ))}
+          <button onClick={doneCooking} style={{width:'100%',background:cfg.color,border:'none',borderRadius:12,padding:14,fontWeight:800,fontSize:15,color:'#fff',cursor:'pointer',fontFamily:'inherit',marginTop:6}}>
+            ✓ Done — update fridge
+          </button>
         </div>
       </div>
     );
