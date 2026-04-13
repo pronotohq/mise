@@ -547,28 +547,48 @@ export default function App() {
     finally { setEmailLoading(false); }
   };
 
+  // ── Gmail OAuth setup guide state ───────────────────────────────
+  const [showGmailSetup, setShowGmailSetup] = useState(false);
+
   // ── Gmail OAuth + auto-sync ──────────────────────────────────────
   const connectGmail = () => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) { showToast('Gmail sync not configured yet'); return; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const google = (window as any).google;
-    if (!google?.accounts?.oauth2) { showToast('Google sign-in not loaded'); return; }
 
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/gmail.readonly',
-      callback: async (resp: { access_token?: string; error?: string }) => {
-        if (resp.error || !resp.access_token) {
-          showToast('Gmail connection failed'); return;
-        }
-        setGmailToken(resp.access_token);
-        setGmailConnected(true);
-        showToast('✅ Gmail connected — syncing orders…');
-        await syncGmailOrders(resp.access_token);
-      },
-    });
-    client.requestAccessToken();
+    // No client ID — show in-app setup guide instead of silent toast
+    if (!clientId) { setShowGmailSetup(true); return; }
+
+    // GIS script may still be loading (async defer) — retry up to 3s
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tryInit = (attempts = 0) => {
+      const google = (window as any).google;
+      if (!google?.accounts?.oauth2) {
+        if (attempts < 6) { setTimeout(() => tryInit(attempts + 1), 500); return; }
+        showToast('Google sign-in failed to load — check your connection'); return;
+      }
+      try {
+        const client = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'https://www.googleapis.com/auth/gmail.readonly',
+          callback: async (resp: { access_token?: string; error?: string }) => {
+            if (resp.error || !resp.access_token) {
+              const msg = resp.error === 'popup_closed_by_user'
+                ? 'Popup closed — tap Connect Gmail to try again'
+                : `Gmail error: ${resp.error || 'unknown'}`;
+              showToast(msg); return;
+            }
+            setGmailToken(resp.access_token);
+            setGmailConnected(true);
+            showToast('✅ Gmail connected — syncing orders…');
+            await syncGmailOrders(resp.access_token);
+          },
+        });
+        client.requestAccessToken();
+      } catch (e) {
+        showToast('Could not open Gmail login — check pop-up blocker');
+        console.error('Gmail OAuth error:', e);
+      }
+    };
+    tryInit();
   };
 
   const syncGmailOrders = async (token: string) => {
@@ -1280,10 +1300,13 @@ export default function App() {
                   <button onClick={connectGmail}
                     style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'11px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
                     <div style={{width:38,height:38,borderRadius:19,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>📧</div>
-                    <div style={{textAlign:'left'}}>
+                    <div style={{flex:1,textAlign:'left'}}>
                       <div style={{fontSize:13,fontWeight:800,color:'var(--ink)'}}>Connect Gmail</div>
-                      <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>OAuth · auto-scans order emails</div>
+                      <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>OAuth · auto-scans Swiggy, Blinkit, Grab orders</div>
                     </div>
+                    {!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID&&(
+                      <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'2px 6px',flexShrink:0}}>Setup</span>
+                    )}
                   </button>
                   {/* Universal forward address */}
                   <button onClick={async()=>{const e=await getOrCreateSyncEmail();if(e){await navigator.clipboard.writeText(e).catch(()=>{});showToast('📋 Sync address copied!');setTab('profile');setShowSyncSetup(true);}}}
@@ -2135,6 +2158,55 @@ export default function App() {
       {/* Modals */}
       {showPremium&&renderPremium()}
       {editExpiry&&renderExpiryEdit()}
+
+      {/* Gmail Setup Guide */}
+      {showGmailSetup&&(
+        <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)setShowGmailSetup(false);}}>
+          <div className="modal-sheet" style={{borderRadius:'26px 26px 0 0'}}>
+            <div className="modal-handle"/>
+            <div style={{padding:'20px 22px 32px',overflowY:'auto',maxHeight:'80vh'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+                <div style={{width:42,height:42,borderRadius:12,background:'#EFF6FF',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>📧</div>
+                <div>
+                  <p style={{fontWeight:900,fontSize:18,color:'var(--ink)'}}>Connect Gmail</p>
+                  <p style={{fontSize:12,color:'var(--gray)'}}>One-time setup · takes 3 minutes</p>
+                </div>
+              </div>
+
+              <div style={{background:'#FEF9C3',border:'1.5px solid #FCD34D',borderRadius:14,padding:14,marginBottom:20}}>
+                <p style={{fontSize:13,fontWeight:700,color:'#92400E',marginBottom:4}}>⚙️ Admin step needed</p>
+                <p style={{fontSize:12,color:'#B45309',lineHeight:1.6}}>Gmail OAuth requires a Google Cloud Client ID. Ask your developer to add <code style={{background:'#FDE68A',borderRadius:4,padding:'1px 4px',fontSize:11}}>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code> to Vercel environment variables.</p>
+              </div>
+
+              <p style={{fontSize:13,fontWeight:800,color:'var(--ink)',marginBottom:12}}>How to set it up:</p>
+
+              {[
+                {n:'1', title:'Create a Google Cloud project', body:'Go to console.cloud.google.com → New Project → name it "FreshNudge"'},
+                {n:'2', title:'Enable Gmail API', body:'APIs & Services → Library → search "Gmail API" → Enable'},
+                {n:'3', title:'Create OAuth credentials', body:'APIs & Services → Credentials → Create Credentials → OAuth Client ID → Web application'},
+                {n:'4', title:'Add your domain', body:'Under "Authorized JavaScript origins" add:\nhttps://mise-lac.vercel.app\nhttp://localhost:3000 (for local dev)'},
+                {n:'5', title:'Copy the Client ID', body:'It looks like: 123456789-abc.apps.googleusercontent.com'},
+                {n:'6', title:'Add to Vercel', body:'Vercel Dashboard → your project → Settings → Environment Variables → add NEXT_PUBLIC_GOOGLE_CLIENT_ID = paste value → Redeploy'},
+              ].map(s=>(
+                <div key={s.n} style={{display:'flex',gap:12,marginBottom:14}}>
+                  <div style={{width:26,height:26,borderRadius:13,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:800,flexShrink:0,marginTop:1}}>{s.n}</div>
+                  <div>
+                    <p style={{fontSize:13,fontWeight:700,color:'var(--ink)',marginBottom:2}}>{s.title}</p>
+                    <p style={{fontSize:12,color:'var(--gray)',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{s.body}</p>
+                  </div>
+                </div>
+              ))}
+
+              <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:12,padding:14,marginBottom:20}}>
+                <p style={{fontSize:12,fontWeight:700,color:'var(--navy)',marginBottom:4}}>💡 Simpler alternative</p>
+                <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.6}}>Use <strong>Forward-to-sync</strong> instead — no setup required. Just forward any grocery order email to your unique FreshNudge address. Works with Gmail, Outlook, Apple Mail, and any email app.</p>
+              </div>
+
+              <button onClick={()=>setShowGmailSetup(false)} className="btn-primary">Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Plain toast */}
       {toast&&<div style={{position:'absolute',bottom:100,left:'50%',transform:'translateX(-50%)',background:'#111827',color:'#fff',padding:'10px 18px',borderRadius:24,fontSize:13,fontWeight:700,zIndex:200,whiteSpace:'nowrap',animation:'fadeIn .2s'}}>{toast}</div>}
