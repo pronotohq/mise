@@ -28,7 +28,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -434,8 +434,8 @@ async function parseEmailWithClaude(
   emailBody: string,
   regionalContext: string,
 ): Promise<ParsedEmail> {
-  const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
+  const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
   });
 
   const systemPrompt = `You are a grocery order email parser for FreshNudge, a kitchen inventory app.
@@ -472,30 +472,25 @@ Rules:
 - emoji: A single relevant emoji for the item.
 - currency: Use the currency from the regional context (e.g. "INR", "SGD", "USD", "GBP", "AUD", "AED").
 
-Skip delivery fees, tips, taxes, packaging charges, discount lines, and non-food items.
+Skip delivery fees, tips, taxes, packaging charges, discount lines, and non-food items (e.g. garbage bags).
 If the email is not an order confirmation at all, return { "store_name": null, "order_type": "grocery", "currency": "USD", "items": [] }.`;
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+  const response = await client.chat.completions.create({
+    model: 'gpt-4o-mini',
     max_tokens: 1500,
+    response_format: { type: 'json_object' },
     messages: [
-      {
-        role: 'user',
-        content: `Extract grocery items from this order email:\n\n${emailBody.slice(0, 6000)}`,
-      },
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Extract grocery items from this order email:\n\n${emailBody.slice(0, 6000)}` },
     ],
-    system: systemPrompt,
   });
 
-  const textBlock = response.content.find(b => b.type === 'text');
-  const raw = textBlock
-    ? textBlock.text
-    : '{"store_name":null,"order_type":"grocery","currency":"USD","items":[]}';
+  const raw = response.choices[0]?.message?.content ?? '{"store_name":null,"order_type":"grocery","currency":"USD","items":[]}';
 
   try {
     return JSON.parse(raw) as ParsedEmail;
   } catch {
-    console.error('[inbound-email/webhook] Failed to parse Claude response as JSON.');
+    console.error('[inbound-email/webhook] Failed to parse GPT response as JSON.');
     return { store_name: null, order_type: 'grocery', currency: 'USD', items: [] };
   }
 }
