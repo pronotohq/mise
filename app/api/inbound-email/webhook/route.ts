@@ -29,9 +29,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import fs from 'fs/promises';
-import path from 'path';
 import crypto from 'crypto';
+import { kv } from '@vercel/kv';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -193,11 +192,7 @@ const SHELF_LIFE: Record<string, number> = {
 // Constants
 // ---------------------------------------------------------------------------
 
-// /tmp is writable on Vercel; process.cwd() is read-only
-const TMP_DIR = '/tmp';
-const PENDING_FILE = path.join(TMP_DIR, 'fn-pending.json');
-const SYNC_LOG_FILE = path.join(TMP_DIR, 'fn-synclog.json');
-const SUBSCRIPTIONS_FILE = path.join(TMP_DIR, 'fn-pushsubs.json');
+const MAX_SYNC_LOG_ENTRIES = 10;
 
 // Stateless userId resolution via HMAC (mirrors generate/route.ts)
 const SYNC_SECRET = process.env.SYNC_EMAIL_SECRET || 'freshnudge-sync-secret-change-in-prod';
@@ -206,6 +201,12 @@ function deriveToken(userId: string): string {
 }
 
 const MAX_SYNC_LOG_ENTRIES = 10;
+
+// KV keys
+const kvPending  = (uid: string) => `fn:pending:${uid}`;
+const kvSyncLog  = (uid: string) => `fn:synclog:${uid}`;
+const kvPushSub  = (uid: string) => `fn:pushsub:${uid}`;
+const kvUserMap  = (token: string) => `fn:usermap:${token}`;
 
 /**
  * Sender domain substrings that identify grocery delivery services.
@@ -314,42 +315,33 @@ function buildRegionalContext(
 }
 
 // ---------------------------------------------------------------------------
-// File I/O helpers
+// KV helpers (replaces all /tmp file I/O)
 // ---------------------------------------------------------------------------
 
-async function readPending(): Promise<PendingFile> {
-  try {
-    const raw = await fs.readFile(PENDING_FILE, 'utf-8');
-    return JSON.parse(raw) as PendingFile;
-  } catch {
-    return {};
-  }
+async function savePendingKV(userId: string, entry: PendingEntry): Promise<void> {
+  await kv.set(kvPending(userId), entry, { ex: 60 * 60 * 24 * 7 }); // 7-day TTL
 }
 
-async function writePending(data: PendingFile): Promise<void> {
-  await fs.writeFile(PENDING_FILE, JSON.stringify(data), 'utf-8');
+async function readPendingKV(userId: string): Promise<PendingEntry | null> {
+  return kv.get<PendingEntry>(kvPending(userId));
 }
 
-async function readSyncLog(): Promise<SyncLogFile> {
-  try {
-    const raw = await fs.readFile(SYNC_LOG_FILE, 'utf-8');
-    return JSON.parse(raw) as SyncLogFile;
-  } catch {
-    return {};
-  }
+async function deletePendingKV(userId: string): Promise<void> {
+  await kv.del(kvPending(userId));
 }
 
-async function writeSyncLog(data: SyncLogFile): Promise<void> {
-  await fs.writeFile(SYNC_LOG_FILE, JSON.stringify(data), 'utf-8');
+async function appendSyncLogKV(userId: string, entry: SyncLogEntry): Promise<void> {
+  const existing = await kv.get<SyncLogEntry[]>(kvSyncLog(userId)) ?? [];
+  const updated = [...existing, entry].slice(-MAX_SYNC_LOG_ENTRIES);
+  await kv.set(kvSyncLog(userId), updated, { ex: 60 * 60 * 24 * 90 }); // 90-day TTL
 }
 
-async function readSubscriptions(): Promise<PushSubscriptionsFile> {
-  try {
-    const raw = await fs.readFile(SUBSCRIPTIONS_FILE, 'utf-8');
-    return JSON.parse(raw) as PushSubscriptionsFile;
-  } catch {
-    return {};
-  }
+async function readSyncLogKV(userId: string): Promise<SyncLogEntry[]> {
+  return await kv.get<SyncLogEntry[]>(kvSyncLog(userId)) ?? [];
+}
+
+async function readPushSubKV(userId: string): Promise<StoredPushSubscription | null> {
+  return kv.get<StoredPushSubscription>(kvPushSub(userId));
 }
 
 // ---------------------------------------------------------------------------
@@ -357,28 +349,14 @@ async function readSubscriptions(): Promise<PushSubscriptionsFile> {
 // ---------------------------------------------------------------------------
 
 /**
- * Stateless userId resolution: the local part of the inbound address is
- * sync_<hmac(userId)>. We can't reverse HMAC, so instead we brute-force
- * check against known userIds stored in /tmp, OR the client sends userId
- * as a query param on the webhook URL (simplest approach).
- *
- * For now: extract userId from the local-part pattern sync_<token>
- * by scanning /tmp/fn-usermap.json which we write on pending check.
+ * Resolve userId from the `to` address token via KV.
+ * The generate route stores token→userId in KV when the user gets their address.
  */
 async function resolveUserId(toAddress: string): Promise<string | null> {
-  const local = extractEmailAddress(toAddress).split('@')[0]; // e.g. "sync_abc123xyz"
+  const local = extractEmailAddress(toAddress).split('@')[0];
   if (!local.startsWith('sync_')) return null;
-  const token = local.slice(5); // 12-char HMAC token
-
-  // Read the userId→token map written when users generate their address
-  try {
-    const raw = await fs.readFile('/tmp/fn-usermap.json', 'utf-8');
-    const map: Record<string, string> = JSON.parse(raw);
-    for (const [userId, storedToken] of Object.entries(map)) {
-      if (storedToken === token) return userId;
-    }
-  } catch { /* file may not exist yet */ }
-  return null;
+  const token = local.slice(5);
+  return kv.get<string>(kvUserMap(token));
 }
 
 function extractEmailAddress(raw: string): string {
@@ -529,7 +507,7 @@ async function sendPushNotification(
 }
 
 // ---------------------------------------------------------------------------
-// Data persistence helpers
+// Data persistence helpers (KV-backed)
 // ---------------------------------------------------------------------------
 
 async function savePendingItems(
@@ -538,25 +516,14 @@ async function savePendingItems(
   store: string,
   syncedAt: string,
 ): Promise<void> {
-  const pending = await readPending();
-  pending[userId] = {
-    items,
-    store,
-    syncedAt,
-    count: items.length,
-  };
-  await writePending(pending);
+  await savePendingKV(userId, { items, store, syncedAt, count: items.length });
 }
 
 async function appendSyncLog(
   userId: string,
   entry: SyncLogEntry,
 ): Promise<void> {
-  const log = await readSyncLog();
-  const userLog = log[userId] ?? [];
-  userLog.push(entry);
-  log[userId] = userLog.slice(-MAX_SYNC_LOG_ENTRIES);
-  await writeSyncLog(log);
+  await appendSyncLogKV(userId, entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -695,9 +662,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // 11. Best-effort push notification — never fail the request if this errors.
     try {
-      const subscriptions = await readSubscriptions();
-      const sub = subscriptions[userId] ?? null;
-
+      const sub = await readPushSubKV(userId);
       if (sub) {
         await sendPushNotification(
           sub,
