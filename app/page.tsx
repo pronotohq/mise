@@ -2002,8 +2002,8 @@ export default function App() {
                   : region.groceryApps[0]?.includes('Ocado')
                   ? 'ocado.com OR tesco.com OR sainsburys.co.uk'
                   : 'foodpanda.sg OR grab.com OR swiggy.com OR blinkit.com';
-                // Gmail search URL — opens with the filter pre-filled
-                const gmailSearch = `https://mail.google.com/mail/u/0/#create-filter&from=${encodeURIComponent(fromQuery)}&subject=${encodeURIComponent('order OR delivered OR confirmation OR receipt')}`;
+                // Gmail search → then user clicks "Create filter" in the search bar dropdown
+                const gmailSearch = `https://mail.google.com/mail/u/0/#search/from%3A(${encodeURIComponent(fromQuery)})+subject%3A(order+OR+confirmation+OR+delivered)`;
                 return (
                   <div style={{marginBottom:16}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
@@ -2014,8 +2014,8 @@ export default function App() {
                       style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:'linear-gradient(135deg,#4285F4,#1a73e8)',border:'none',borderRadius:14,padding:'14px 16px',fontSize:14,fontWeight:800,color:'#fff',cursor:'pointer',textAlign:'left',textDecoration:'none',boxSizing:'border-box',marginBottom:8}}>
                       <span style={{fontSize:22}}>📧</span>
                       <div style={{flex:1}}>
-                        <div>Open Gmail — filter pre-filled</div>
-                        <div style={{fontSize:11,fontWeight:400,color:'#BFDBFE',marginTop:2}}>Just click "Create filter" then tick "Forward to" → paste your address</div>
+                        <div>Open Gmail — search pre-filled</div>
+                        <div style={{fontSize:11,fontWeight:400,color:'#BFDBFE',marginTop:2}}>Click the ▼ dropdown in the search bar → "Create filter" → tick "Forward to" → paste your address</div>
                       </div>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
                     </a>
