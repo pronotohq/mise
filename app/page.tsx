@@ -1941,25 +1941,14 @@ export default function App() {
             <div style={{borderTop:'1px solid var(--border)',padding:'16px'}}>
 
               {/* Hero explanation */}
-              <div style={{background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)',border:'1.5px solid #BFDBFE',borderRadius:14,padding:14,marginBottom:16}}>
-                <p style={{fontSize:13,fontWeight:800,color:'var(--navy)',marginBottom:8}}>How it works</p>
-                <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                  {[
-                    ['🛒','You order on FoodPanda / GrabMart / Swiggy'],
-                    ['📧','They send you a confirmation email (automatically)'],
-                    ['⚡','Gmail forwards it to FreshNudge (automatically, forever)'],
-                    ['🧊','Items appear in your fridge — no action needed'],
-                  ].map(([ic,txt])=>(
-                    <div key={txt} style={{display:'flex',alignItems:'center',gap:10}}>
-                      <span style={{fontSize:16,flexShrink:0}}>{ic}</span>
-                      <span style={{fontSize:12,color:'var(--inkM)'}}>{txt}</span>
-                    </div>
+              <div style={{background:'linear-gradient(135deg,#0F172A,#1E3A5F)',borderRadius:14,padding:14,marginBottom:16}}>
+                <p style={{fontSize:11,fontWeight:700,color:'#93C5FD',letterSpacing:.6,marginBottom:10}}>HOW IT WORKS — AFTER 2-MIN SETUP</p>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+                  {['🛒 Order','→','📧 Email','→','⚡ Auto-forward','→','🧊 Fridge'].map((t,i)=>(
+                    <span key={i} style={{fontSize:t==='→'?14:11,color:t==='→'?'#475569':'#E2E8F0',fontWeight:t==='→'?400:700,whiteSpace:'nowrap'}}>{t}</span>
                   ))}
                 </div>
-                <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #BFDBFE',display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:13}}>⏱</span>
-                  <span style={{fontSize:12,fontWeight:700,color:'var(--navy)'}}>One-time setup · 2 minutes · works forever after</span>
-                </div>
+                <p style={{fontSize:12,color:'#94A3B8'}}>You order on FoodPanda, close the app. Items appear here automatically. Forever.</p>
               </div>
 
               {/* Step 1 — get sync address */}
@@ -1982,38 +1971,53 @@ export default function App() {
                 </button>
               )}
 
-              {/* Step 2 — set up Gmail filter */}
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                <div style={{width:20,height:20,borderRadius:10,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,flexShrink:0}}>2</div>
-                <p style={{fontSize:12,fontWeight:800,color:'var(--ink)'}}>Create a Gmail auto-forward filter</p>
-              </div>
-              <div style={{background:'#F8FAFC',border:'1.5px solid var(--border)',borderRadius:12,padding:12,marginBottom:10}}>
-                <p style={{fontSize:11,color:'var(--gray)',marginBottom:8}}>In Gmail: Settings (⚙️) → See all settings → Filters → Create new filter</p>
-                <div style={{background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
-                  <p style={{fontSize:10,fontWeight:700,color:'var(--gray)',marginBottom:3}}>FILTER — From field:</p>
-                  <p style={{fontSize:11,fontFamily:'monospace',color:'var(--navy)',wordBreak:'break-all',lineHeight:1.6}}>
-                    {region.groceryApps[0]?.includes('FoodPanda')||region.groceryApps[0]?.includes('Grab')
-                      ? 'foodpanda.sg OR grab.com OR redmart.com'
-                      : region.groceryApps[0]?.includes('Swiggy')||region.groceryApps[0]?.includes('Blinkit')
-                      ? 'swiggy.com OR blinkit.com OR zeptonow.com OR bigbasket.com'
-                      : region.groceryApps[0]?.includes('Instacart')
-                      ? 'instacart.com OR amazon.com OR doordash.com'
-                      : 'foodpanda.sg OR grab.com OR swiggy.com OR blinkit.com'}
-                  </p>
+              {/* Step 2 — one-tap Gmail filter */}
+              {syncEmail && (()=>{
+                const fromQuery = region.groceryApps[0]?.includes('FoodPanda')||region.groceryApps[0]?.includes('Grab')
+                  ? 'foodpanda.sg OR grab.com OR redmart.com OR fairprice.com.sg'
+                  : region.groceryApps[0]?.includes('Swiggy')||region.groceryApps[0]?.includes('Blinkit')
+                  ? 'swiggy.com OR blinkit.com OR zeptonow.com OR bigbasket.com'
+                  : region.groceryApps[0]?.includes('Instacart')
+                  ? 'instacart.com OR amazon.com OR walmart.com OR doordash.com'
+                  : region.groceryApps[0]?.includes('Ocado')
+                  ? 'ocado.com OR tesco.com OR sainsburys.co.uk'
+                  : 'foodpanda.sg OR grab.com OR swiggy.com OR blinkit.com';
+                // Gmail search URL — opens with the filter pre-filled
+                const gmailSearch = `https://mail.google.com/mail/u/0/#create-filter&from=${encodeURIComponent(fromQuery)}&subject=${encodeURIComponent('order OR delivered OR confirmation OR receipt')}`;
+                return (
+                  <div style={{marginBottom:16}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                      <div style={{width:20,height:20,borderRadius:10,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,flexShrink:0}}>2</div>
+                      <p style={{fontSize:12,fontWeight:800,color:'var(--ink)'}}>Tap below — Gmail opens with everything pre-filled</p>
+                    </div>
+                    <a href={gmailSearch} target="_blank" rel="noreferrer"
+                      style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:'linear-gradient(135deg,#4285F4,#1a73e8)',border:'none',borderRadius:14,padding:'14px 16px',fontSize:14,fontWeight:800,color:'#fff',cursor:'pointer',textAlign:'left',textDecoration:'none',boxSizing:'border-box',marginBottom:8}}>
+                      <span style={{fontSize:22}}>📧</span>
+                      <div style={{flex:1}}>
+                        <div>Open Gmail — filter pre-filled</div>
+                        <div style={{fontSize:11,fontWeight:400,color:'#BFDBFE',marginTop:2}}>Just click "Create filter" then tick "Forward to" → paste your address</div>
+                      </div>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </a>
+                    <div style={{background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:12,padding:'10px 12px',display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{fontSize:16}}>📋</span>
+                      <div style={{flex:1}}>
+                        <p style={{fontSize:10,fontWeight:700,color:'#15803D',marginBottom:2}}>PASTE THIS AS "FORWARD TO" ADDRESS</p>
+                        <p style={{fontSize:11,fontFamily:'monospace',color:'#15803D',wordBreak:'break-all'}}>{syncEmail}</p>
+                      </div>
+                      <button onClick={copySyncEmail} style={{background:copied?'#15803D':'#22C55E',border:'none',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,transition:'background .2s'}}>
+                        {copied?'✓':'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+              {!syncEmail&&(
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+                  <div style={{width:20,height:20,borderRadius:10,background:'#D1D5DB',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,flexShrink:0}}>2</div>
+                  <p style={{fontSize:12,color:'var(--gray)'}}>Generate your address first ↑</p>
                 </div>
-                <div style={{background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
-                  <p style={{fontSize:10,fontWeight:700,color:'var(--gray)',marginBottom:3}}>FILTER — Subject contains:</p>
-                  <p style={{fontSize:11,fontFamily:'monospace',color:'var(--navy)'}}>order OR delivered OR confirmation OR receipt</p>
-                </div>
-                <div style={{background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:8,padding:'8px 10px'}}>
-                  <p style={{fontSize:10,fontWeight:700,color:'#15803D',marginBottom:3}}>ACTION — Forward to:</p>
-                  <p style={{fontSize:11,fontFamily:'monospace',color:'#15803D',wordBreak:'break-all'}}>{syncEmail||'(generate your address first)'}</p>
-                </div>
-              </div>
-              <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noreferrer"
-                style={{display:'block',width:'100%',background:'linear-gradient(135deg,#4285F4,#1a73e8)',border:'none',borderRadius:12,padding:'11px 0',fontSize:13,fontWeight:800,color:'#fff',cursor:'pointer',textAlign:'center',textDecoration:'none',marginBottom:16,boxSizing:'border-box'}}>
-                Open Gmail Filters →
-              </a>
+              )}
 
               {/* Supported apps */}
               <div style={{background:'var(--grayL)',borderRadius:12,padding:'10px 12px',marginBottom:12}}>
