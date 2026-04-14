@@ -304,6 +304,7 @@ export default function App() {
   const [showSyncSetup, setShowSyncSetup] = useState(false);
   const [gmailFilterDone, setGmailFilterDone] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedFrom, setCopiedFrom] = useState(false);
   const [cookedTimestamps, setCookedTimestamps] = useState<Record<string,string>>({});
   const [dailyRescipe, setDailyRescipe] = useState<{item:PantryItem;recipe:string}|null>(null);
   const photoInputRef = useRef<HTMLInputElement|null>(null);
@@ -2022,7 +2023,6 @@ export default function App() {
                   // fallback: show all common ones
                   : 'foodpanda.com OR grab.com OR swiggy.com OR blinkit.com OR zomato.com';
 
-                const [copiedFrom, setCopiedFrom] = React.useState(false);
                 const copyFrom = () => {
                   navigator.clipboard.writeText(fromDomains).then(()=>{
                     setCopiedFrom(true); setTimeout(()=>setCopiedFrom(false),2000);
