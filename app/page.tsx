@@ -302,6 +302,7 @@ export default function App() {
   const [syncLog, setSyncLog] = useState<{store:string;count:number;syncedAt:string;items:string[]}[]>([]);
   const [syncLoading, setSyncLoading] = useState(false);
   const [showSyncSetup, setShowSyncSetup] = useState(false);
+  const [gmailFilterDone, setGmailFilterDone] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cookedTimestamps, setCookedTimestamps] = useState<Record<string,string>>({});
   const [dailyRescipe, setDailyRescipe] = useState<{item:PantryItem;recipe:string}|null>(null);
@@ -329,6 +330,7 @@ export default function App() {
         if(d.syncEmail)  { setSyncEmail(d.syncEmail);  }
         if(d.syncUserId) { setSyncUserId(d.syncUserId); }
         if(d.syncLog)    { setSyncLog(d.syncLog); }
+        if(d.gmailFilterDone) setGmailFilterDone(true);
         if(d.cookedTimestamps) setCookedTimestamps(d.cookedTimestamps);
       }
     } catch{}
@@ -1991,8 +1993,19 @@ export default function App() {
                 </button>
               )}
 
-              {/* Step 2 — Gmail filter setup */}
-              {syncEmail && (()=>{
+              {/* Step 2 — Gmail filter setup (collapsed once done) */}
+              {syncEmail && gmailFilterDone && (
+                <div style={{background:'#F0FDF4',border:'1.5px solid #86EFAC',borderRadius:14,padding:'12px 14px',display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+                  <span style={{fontSize:22}}>✅</span>
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:13,fontWeight:800,color:'#15803D'}}>Gmail filter active</p>
+                    <p style={{fontSize:11,color:'#16A34A',marginTop:2}}>Order emails auto-forward to FreshNudge</p>
+                  </div>
+                  <button onClick={()=>{ setGmailFilterDone(false); const cur=JSON.parse(localStorage.getItem('mise_v1')||'{}'); localStorage.setItem('mise_v1',JSON.stringify({...cur,gmailFilterDone:false})); }}
+                    style={{background:'none',border:'1px solid #86EFAC',borderRadius:8,padding:'4px 8px',fontSize:10,color:'#15803D',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Edit</button>
+                </div>
+              )}
+              {syncEmail && !gmailFilterDone && (()=>{
                 // Build region-aware "From" filter value
                 const fromDomains = region.groceryApps[0]?.includes('FoodPanda')||region.groceryApps[0]?.includes('Grab')||region.groceryApps[0]?.includes('GrabMart')
                   ? 'foodpanda.sg OR grab.com OR redmart.com OR fairprice.com.sg'
@@ -2062,6 +2075,15 @@ export default function App() {
                         {copied?'✓':'Copy'}
                       </button>
                     </div>
+
+                    {/* Mark filter as done */}
+                    <button onClick={()=>{
+                      setGmailFilterDone(true);
+                      try { const cur=JSON.parse(localStorage.getItem('mise_v1')||'{}'); localStorage.setItem('mise_v1',JSON.stringify({...cur,gmailFilterDone:true})); } catch{}
+                      showToast('🎉 Auto-sync is live! Order on FoodPanda and items will appear here.');
+                    }} style={{width:'100%',background:'linear-gradient(135deg,#15803D,#16A34A)',border:'none',borderRadius:12,padding:'13px 16px',fontSize:14,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                      <span>✅</span> Filter is set up — Activate auto-sync
+                    </button>
                   </div>
                 );
               })()}
