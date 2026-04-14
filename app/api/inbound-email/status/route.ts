@@ -3,7 +3,7 @@
  *
  * GET ?userId=xxx — Returns the sync log for a user (last 5 syncs).
  *
- * Data stored in data/sync-log.json:
+ * Data stored in data/fn-synclog.json:
  * {
  *   "userId": [
  *     {
@@ -41,8 +41,8 @@ interface SyncLogFile {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const SYNC_LOG_FILE = path.join(DATA_DIR, 'sync-log.json');
+const DATA_DIR = '/tmp';
+const SYNC_LOG_FILE = path.join(DATA_DIR, 'fn-synclog.json');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,7 +58,7 @@ async function readSyncLog(): Promise<SyncLogFile> {
 }
 
 async function writeSyncLog(data: SyncLogFile): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  
   await fs.writeFile(SYNC_LOG_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 

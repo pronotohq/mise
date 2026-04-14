@@ -5,7 +5,7 @@
  *                    client browser, then atomically deletes them.
  * DELETE ?userId=xxx — Explicit clear of pending items (idempotent fallback).
  *
- * Data stored in data/pending-items.json:
+ * Data stored in data/fn-pending.json:
  * {
  *   "userId": {
  *     "items": [...],
@@ -39,8 +39,8 @@ interface PendingFile {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const PENDING_FILE = path.join(DATA_DIR, 'pending-items.json');
+const DATA_DIR = '/tmp';
+const PENDING_FILE = path.join(DATA_DIR, 'fn-pending.json');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,7 +56,7 @@ async function readPending(): Promise<PendingFile> {
 }
 
 async function writePending(data: PendingFile): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  
   await fs.writeFile(PENDING_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 

@@ -1,126 +1,60 @@
 /**
  * POST /api/inbound-email/generate
  *
- * Generates a unique inbound email address for a FreshNudge user.
- * Each user gets one address like `user_abc123@inbound.freshnudge.app`.
- * They forward grocery order confirmation emails to this address, and
- * our webhook parses items then **immediately deletes** the raw email.
+ * Stateless address generation — derives email from userId via HMAC.
+ * Also writes userId→token to /tmp/fn-usermap.json so the webhook
+ * can resolve inbound emails back to the correct userId.
  *
- * ## Privacy approach
- * - The mapping file stores only `{ userId -> inboundEmail }`.
- * - No email content, PII, or credentials are persisted here.
- * - The inbound address acts as a pseudonymous relay — it cannot be
- *   reverse-mapped to a real email without this server-side mapping.
- *
- * ## Storage (MVP)
- * Uses a JSON file on disk (`data/inbound-mappings.json`). This is
- * intentionally simple for the MVP and should migrate to a database
- * (e.g. Vercel KV, Supabase) before production launch.
+ * Format: sync_<12-char-base64url>@inbound.freshnudge.app
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs/promises';
 
-/** Directory where the mapping file lives (project root / data). */
-const DATA_DIR = path.join(process.cwd(), 'data');
-
-/** Full path to the JSON mapping file. */
-const MAPPINGS_FILE = path.join(DATA_DIR, 'inbound-mappings.json');
-
-/** Domain used for generated inbound addresses. */
 const INBOUND_DOMAIN = 'inbound.freshnudge.app';
+const SECRET = process.env.SYNC_EMAIL_SECRET || 'freshnudge-sync-secret-change-in-prod';
+const USERMAP_FILE = '/tmp/fn-usermap.json';
 
-/**
- * Shape of the mapping file: userId -> inbound email address.
- */
-interface MappingsFile {
-  [userId: string]: string;
+function deriveToken(userId: string): string {
+  return crypto
+    .createHmac('sha256', SECRET)
+    .update(userId)
+    .digest('base64url')
+    .slice(0, 12);
 }
 
-/**
- * Reads the current mappings from disk. Returns an empty object if
- * the file doesn't exist yet.
- */
-async function readMappings(): Promise<MappingsFile> {
+async function saveToUserMap(userId: string, token: string): Promise<void> {
   try {
-    const raw = await fs.readFile(MAPPINGS_FILE, 'utf-8');
-    return JSON.parse(raw) as MappingsFile;
-  } catch {
-    // File doesn't exist yet — that's fine for the first call.
-    return {};
-  }
+    let map: Record<string, string> = {};
+    try {
+      const raw = await fs.readFile(USERMAP_FILE, 'utf-8');
+      map = JSON.parse(raw);
+    } catch { /* doesn't exist yet */ }
+    map[userId] = token;
+    await fs.writeFile(USERMAP_FILE, JSON.stringify(map), 'utf-8');
+  } catch { /* /tmp write failure — non-fatal, webhook has fallback */ }
 }
 
-/**
- * Persists the mappings object to disk, creating the data directory
- * if it doesn't already exist.
- */
-async function writeMappings(mappings: MappingsFile): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(MAPPINGS_FILE, JSON.stringify(mappings, null, 2), 'utf-8');
-}
-
-/**
- * Generates a short, URL-safe random token for the local part of the
- * inbound address. 9 bytes -> 12 base64url chars, giving ~2^72
- * possible values — collision-resistant without a counter.
- */
-function generateToken(): string {
-  return crypto.randomBytes(9).toString('base64url');
-}
-
-/**
- * POST handler — accepts `{ userId }` and returns `{ inboundEmail }`.
- *
- * If the user already has a mapping, the existing address is returned
- * (idempotent). Otherwise a new address is generated and stored.
- */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const body: unknown = await req.json();
+    const body = await req.json();
+    const userId = (body?.userId ?? '').toString().trim();
 
-    if (
-      !body ||
-      typeof body !== 'object' ||
-      !('userId' in body) ||
-      typeof (body as Record<string, unknown>).userId !== 'string'
-    ) {
-      return NextResponse.json(
-        { error: 'Missing or invalid userId (string required).' },
-        { status: 400 },
-      );
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
     }
 
-    const userId = (body as { userId: string }).userId.trim();
-    if (userId.length === 0) {
-      return NextResponse.json(
-        { error: 'userId must be a non-empty string.' },
-        { status: 400 },
-      );
-    }
+    const token = deriveToken(userId);
+    const inboundEmail = `sync_${token}@${INBOUND_DOMAIN}`;
 
-    const mappings = await readMappings();
-
-    // Idempotent: return existing address if one is already assigned.
-    if (mappings[userId]) {
-      return NextResponse.json({ inboundEmail: mappings[userId] });
-    }
-
-    // Generate a new unique address.
-    const token = generateToken();
-    const inboundEmail = `user_${token}@${INBOUND_DOMAIN}`;
-
-    mappings[userId] = inboundEmail;
-    await writeMappings(mappings);
+    // Best-effort: persist mapping so webhook can resolve this userId
+    await saveToUserMap(userId, token);
 
     return NextResponse.json({ inboundEmail });
+
   } catch (err) {
-    console.error('[inbound-email/generate] Error:', err);
-    return NextResponse.json(
-      { error: 'Failed to generate inbound email address.' },
-      { status: 500 },
-    );
+    console.error('[generate] error:', err);
+    return NextResponse.json({ error: 'Failed to generate address' }, { status: 500 });
   }
 }

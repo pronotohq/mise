@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -192,11 +193,17 @@ const SHELF_LIFE: Record<string, number> = {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const MAPPINGS_FILE = path.join(DATA_DIR, 'inbound-mappings.json');
-const PENDING_FILE = path.join(DATA_DIR, 'pending-items.json');
-const SYNC_LOG_FILE = path.join(DATA_DIR, 'sync-log.json');
-const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'push-subscriptions.json');
+// /tmp is writable on Vercel; process.cwd() is read-only
+const TMP_DIR = '/tmp';
+const PENDING_FILE = path.join(TMP_DIR, 'fn-pending.json');
+const SYNC_LOG_FILE = path.join(TMP_DIR, 'fn-synclog.json');
+const SUBSCRIPTIONS_FILE = path.join(TMP_DIR, 'fn-pushsubs.json');
+
+// Stateless userId resolution via HMAC (mirrors generate/route.ts)
+const SYNC_SECRET = process.env.SYNC_EMAIL_SECRET || 'freshnudge-sync-secret-change-in-prod';
+function deriveToken(userId: string): string {
+  return crypto.createHmac('sha256', SYNC_SECRET).update(userId).digest('base64url').slice(0, 12);
+}
 
 const MAX_SYNC_LOG_ENTRIES = 10;
 
@@ -310,19 +317,6 @@ function buildRegionalContext(
 // File I/O helpers
 // ---------------------------------------------------------------------------
 
-async function ensureDataDir(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-}
-
-async function readMappings(): Promise<MappingsFile> {
-  try {
-    const raw = await fs.readFile(MAPPINGS_FILE, 'utf-8');
-    return JSON.parse(raw) as MappingsFile;
-  } catch {
-    return {};
-  }
-}
-
 async function readPending(): Promise<PendingFile> {
   try {
     const raw = await fs.readFile(PENDING_FILE, 'utf-8');
@@ -333,8 +327,7 @@ async function readPending(): Promise<PendingFile> {
 }
 
 async function writePending(data: PendingFile): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(PENDING_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  await fs.writeFile(PENDING_FILE, JSON.stringify(data), 'utf-8');
 }
 
 async function readSyncLog(): Promise<SyncLogFile> {
@@ -347,8 +340,7 @@ async function readSyncLog(): Promise<SyncLogFile> {
 }
 
 async function writeSyncLog(data: SyncLogFile): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(SYNC_LOG_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  await fs.writeFile(SYNC_LOG_FILE, JSON.stringify(data), 'utf-8');
 }
 
 async function readSubscriptions(): Promise<PushSubscriptionsFile> {
@@ -364,14 +356,28 @@ async function readSubscriptions(): Promise<PushSubscriptionsFile> {
 // Inbound payload helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Stateless userId resolution: the local part of the inbound address is
+ * sync_<hmac(userId)>. We can't reverse HMAC, so instead we brute-force
+ * check against known userIds stored in /tmp, OR the client sends userId
+ * as a query param on the webhook URL (simplest approach).
+ *
+ * For now: extract userId from the local-part pattern sync_<token>
+ * by scanning /tmp/fn-usermap.json which we write on pending check.
+ */
 async function resolveUserId(toAddress: string): Promise<string | null> {
-  const mappings = await readMappings();
-  const normalised = toAddress.toLowerCase().trim();
-  for (const [userId, email] of Object.entries(mappings)) {
-    if (email.toLowerCase() === normalised) {
-      return userId;
+  const local = extractEmailAddress(toAddress).split('@')[0]; // e.g. "sync_abc123xyz"
+  if (!local.startsWith('sync_')) return null;
+  const token = local.slice(5); // 12-char HMAC token
+
+  // Read the userId→token map written when users generate their address
+  try {
+    const raw = await fs.readFile('/tmp/fn-usermap.json', 'utf-8');
+    const map: Record<string, string> = JSON.parse(raw);
+    for (const [userId, storedToken] of Object.entries(map)) {
+      if (storedToken === token) return userId;
     }
-  }
+  } catch { /* file may not exist yet */ }
   return null;
 }
 

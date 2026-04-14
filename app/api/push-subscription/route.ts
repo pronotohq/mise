@@ -9,7 +9,7 @@
  *                    (used server-side when sending push notifications).
  *                    Response: { subscription: {...} } or { subscription: null }
  *
- * Data stored in data/push-subscriptions.json:
+ * Data stored in data/fn-pushsubs.json:
  * {
  *   "userId": {
  *     "endpoint": "https://...",
@@ -42,8 +42,8 @@ interface PushSubscriptionsFile {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'push-subscriptions.json');
+const DATA_DIR = '/tmp';
+const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'fn-pushsubs.json');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,7 +59,7 @@ async function readSubscriptions(): Promise<PushSubscriptionsFile> {
 }
 
 async function writeSubscriptions(data: PushSubscriptionsFile): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  
   await fs.writeFile(SUBSCRIPTIONS_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 
