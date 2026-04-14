@@ -426,26 +426,46 @@ export default function App() {
     if (syncEmail) return syncEmail;
     setSyncLoading(true);
     try {
-      // Stable userId from localStorage (or create one)
-      let uid_ = syncUserId;
+      // Read userId directly from localStorage to avoid stale state
+      let uid_: string;
+      try {
+        const stored = JSON.parse(localStorage.getItem('mise_v1') || '{}');
+        uid_ = stored.syncUserId || '';
+      } catch { uid_ = ''; }
+
       if (!uid_) {
         uid_ = 'user_' + uid();
         setSyncUserId(uid_);
-        save({syncUserId: uid_});
+        // Write immediately before the fetch
+        try {
+          const cur = JSON.parse(localStorage.getItem('mise_v1') || '{}');
+          localStorage.setItem('mise_v1', JSON.stringify({...cur, syncUserId: uid_}));
+        } catch {}
       }
+
       const res = await fetch('/api/inbound-email/generate', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({userId: uid_}),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.inboundEmail) {
         setSyncEmail(data.inboundEmail);
-        save({syncEmail: data.inboundEmail});
+        // Write directly to localStorage so it persists immediately
+        try {
+          const cur = JSON.parse(localStorage.getItem('mise_v1') || '{}');
+          localStorage.setItem('mise_v1', JSON.stringify({...cur, syncEmail: data.inboundEmail, syncUserId: uid_}));
+        } catch {}
         return data.inboundEmail as string;
       }
-    } catch { showToast('Could not generate sync email — try again'); }
-    finally { setSyncLoading(false); }
+      showToast('Could not generate address — try again');
+    } catch (e) {
+      console.error('[getOrCreateSyncEmail]', e);
+      showToast('Could not generate address — try again');
+    } finally {
+      setSyncLoading(false);
+    }
     return '';
   };
 
