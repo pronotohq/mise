@@ -579,8 +579,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const payload = normalisePayload(rawBody);
 
     // 1. Resolve user from the `to` address.
+    //    Fallback: accept explicit userId in the POST body (for testing / direct POSTs).
     const toAddress = extractEmailAddress(payload.to);
-    const userId = await resolveUserId(toAddress);
+    let userId = await resolveUserId(toAddress);
+
+    if (!userId && rawBody.userId && typeof rawBody.userId === 'string') {
+      userId = rawBody.userId.trim() || null;
+    }
 
     if (!userId) {
       return NextResponse.json(
