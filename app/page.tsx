@@ -1283,50 +1283,28 @@ export default function App() {
               </button>
             )}
 
-            {/* Gmail auto-sync — Premium */}
+            {/* Auto-sync — Premium */}
             {isPremium ? (
-              gmailConnected ? (
-                <button onClick={()=>syncGmailOrders(gmailToken)} disabled={gmailSyncing}
-                  style={{width:'100%',background:'#F0FDF4',border:'1.5px solid #86EFAC',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',opacity:gmailSyncing?.7:1}}>
-                  <div style={{width:42,height:42,borderRadius:21,background:'#22C55E',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
-                  <div style={{textAlign:'left'}}>
-                    <div style={{fontSize:14,fontWeight:800,color:'#15803D'}}>{gmailSyncing?'Syncing orders…':'✅ Gmail connected'}</div>
-                    <div style={{fontSize:11,color:'#16A34A',marginTop:1}}>{gmailSyncing?'Reading your order emails…':'Tap to re-sync grocery orders'}</div>
+              <button onClick={async()=>{const e=await getOrCreateSyncEmail();if(e){setTab('profile');setShowSyncSetup(true);}}}
+                style={{width:'100%',background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)',border:'1.5px solid #BFDBFE',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                <div style={{width:42,height:42,borderRadius:12,background:'#0EA5E9',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>🔄</div>
+                <div style={{flex:1,textAlign:'left'}}>
+                  <div style={{fontSize:14,fontWeight:800,color:'var(--navy)'}}>
+                    {syncLog.length>0 ? `✓ Auto-sync active · ${syncLog[0].store}` : 'Order → Fridge (auto)'}
                   </div>
-                </button>
-              ) : (
-                <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                  {/* Gmail OAuth option */}
-                  <button onClick={connectGmail}
-                    style={{width:'100%',background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'11px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-                    <div style={{width:38,height:38,borderRadius:19,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>📧</div>
-                    <div style={{flex:1,textAlign:'left'}}>
-                      <div style={{fontSize:13,fontWeight:800,color:'var(--ink)'}}>Connect Gmail</div>
-                      <div style={{fontSize:11,color:'var(--gray)',marginTop:1}}>OAuth · auto-scans Swiggy, Blinkit, Grab orders</div>
-                    </div>
-                    {!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID&&(
-                      <span style={{fontSize:10,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'2px 6px',flexShrink:0}}>Setup</span>
-                    )}
-                  </button>
-                  {/* Auto-sync setup */}
-                  <button onClick={async()=>{const e=await getOrCreateSyncEmail();if(e){setTab('profile');setShowSyncSetup(true);}}}
-                    style={{width:'100%',background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)',border:'1.5px solid #BFDBFE',borderRadius:14,padding:'11px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-                    <div style={{width:38,height:38,borderRadius:12,background:'#0EA5E9',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>🔄</div>
-                    <div style={{flex:1,textAlign:'left'}}>
-                      <div style={{fontSize:13,fontWeight:800,color:'var(--navy)'}}>Order → Fridge (auto)</div>
-                      <div style={{fontSize:11,color:'#3B82F6',marginTop:1}}>Set up once · FoodPanda, Grab, Swiggy sync forever</div>
-                    </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-                  </button>
+                  <div style={{fontSize:11,color:'#3B82F6',marginTop:1}}>
+                    {syncLog.length>0 ? `Last synced ${new Date(syncLog[0].syncedAt).toLocaleDateString()}` : 'Set up once · FoodPanda, Grab, Swiggy sync forever'}
+                  </div>
                 </div>
-              )
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
             ) : (
               <button onClick={()=>setShowPremium(true)}
                 style={{width:'100%',background:'#FFFBEB',border:'1.5px solid #FCD34D',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-                <div style={{width:42,height:42,borderRadius:21,background:'#6366F1',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>📧</div>
+                <div style={{width:42,height:42,borderRadius:21,background:'#F59E0B',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>🔄</div>
                 <div style={{flex:1,textAlign:'left'}}>
-                  <div style={{fontSize:14,fontWeight:800,color:'#92400E'}}>Email auto-sync <span style={{fontSize:11,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:4}}>👑 Premium</span></div>
-                  <div style={{fontSize:11,color:'#B45309',marginTop:1}}>FoodPanda, Grab, Swiggy auto-added from email</div>
+                  <div style={{fontSize:14,fontWeight:800,color:'#92400E'}}>Order → Fridge (auto) <span style={{fontSize:11,background:'#F59E0B',color:'#fff',borderRadius:6,padding:'1px 6px',marginLeft:4}}>👑 Premium</span></div>
+                  <div style={{fontSize:11,color:'#B45309',marginTop:1}}>FoodPanda, Grab, Swiggy — items appear automatically</div>
                 </div>
               </button>
             )}
