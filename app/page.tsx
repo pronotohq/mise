@@ -1991,9 +1991,10 @@ export default function App() {
                 </button>
               )}
 
-              {/* Step 2 — one-tap Gmail filter */}
+              {/* Step 2 — Gmail filter setup */}
               {syncEmail && (()=>{
-                const fromQuery = region.groceryApps[0]?.includes('FoodPanda')||region.groceryApps[0]?.includes('Grab')
+                // Build region-aware "From" filter value
+                const fromDomains = region.groceryApps[0]?.includes('FoodPanda')||region.groceryApps[0]?.includes('Grab')||region.groceryApps[0]?.includes('GrabMart')
                   ? 'foodpanda.sg OR grab.com OR redmart.com OR fairprice.com.sg'
                   : region.groceryApps[0]?.includes('Swiggy')||region.groceryApps[0]?.includes('Blinkit')
                   ? 'swiggy.com OR blinkit.com OR zeptonow.com OR bigbasket.com'
@@ -2001,28 +2002,60 @@ export default function App() {
                   ? 'instacart.com OR amazon.com OR walmart.com OR doordash.com'
                   : region.groceryApps[0]?.includes('Ocado')
                   ? 'ocado.com OR tesco.com OR sainsburys.co.uk'
-                  : 'foodpanda.sg OR grab.com OR swiggy.com OR blinkit.com';
-                // Gmail search → then user clicks "Create filter" in the search bar dropdown
-                const gmailSearch = `https://mail.google.com/mail/u/0/#search/from%3A(${encodeURIComponent(fromQuery)})+subject%3A(order+OR+confirmation+OR+delivered)`;
+                  : region.groceryApps[0]?.includes('Noon')||region.groceryApps[0]?.includes('Talabat')
+                  ? 'noon.com OR talabat.com OR carrefouruae.com'
+                  : region.groceryApps[0]?.includes('Woolworths')||region.groceryApps[0]?.includes('Coles')
+                  ? 'woolworths.com.au OR coles.com.au'
+                  // fallback: show all common ones
+                  : 'foodpanda.com OR grab.com OR swiggy.com OR blinkit.com OR zomato.com';
+
+                const [copiedFrom, setCopiedFrom] = React.useState(false);
+                const copyFrom = () => {
+                  navigator.clipboard.writeText(fromDomains).then(()=>{
+                    setCopiedFrom(true); setTimeout(()=>setCopiedFrom(false),2000);
+                  });
+                };
+
                 return (
                   <div style={{marginBottom:16}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
                       <div style={{width:20,height:20,borderRadius:10,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:900,flexShrink:0}}>2</div>
-                      <p style={{fontSize:12,fontWeight:800,color:'var(--ink)'}}>Tap below — Gmail opens with everything pre-filled</p>
+                      <p style={{fontSize:12,fontWeight:800,color:'var(--ink)'}}>Set up Gmail to auto-forward order emails</p>
                     </div>
-                    <a href={gmailSearch} target="_blank" rel="noreferrer"
+
+                    {/* Step-by-step instructions */}
+                    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:12,padding:'12px 14px',marginBottom:8}}>
+                      <p style={{fontSize:11,fontWeight:700,color:'#1E40AF',marginBottom:8}}>IN GMAIL → SETTINGS → SEE ALL SETTINGS → FILTERS TAB:</p>
+                      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                        <p style={{fontSize:11,color:'#1E40AF'}}>1. Click <strong>"Create a new filter"</strong></p>
+                        <p style={{fontSize:11,color:'#1E40AF'}}>2. In the <strong>"From"</strong> field, paste:</p>
+                        {/* Copyable FROM value */}
+                        <div style={{background:'#fff',border:'1px solid #93C5FD',borderRadius:8,padding:'8px 10px',display:'flex',alignItems:'center',gap:8}}>
+                          <p style={{fontSize:10,fontFamily:'monospace',color:'#1D4ED8',flex:1,wordBreak:'break-all',margin:0}}>{fromDomains}</p>
+                          <button onClick={copyFrom} style={{background:copiedFrom?'#1D4ED8':'#3B82F6',border:'none',borderRadius:6,padding:'4px 8px',fontSize:10,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,transition:'background .2s'}}>
+                            {copiedFrom?'✓':'Copy'}
+                          </button>
+                        </div>
+                        <p style={{fontSize:11,color:'#1E40AF'}}>3. Click <strong>"Create filter"</strong> → tick <strong>"Forward it to"</strong> → paste your sync address → <strong>"Create filter"</strong></p>
+                      </div>
+                    </div>
+
+                    {/* Open Gmail button */}
+                    <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noreferrer"
                       style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:'linear-gradient(135deg,#4285F4,#1a73e8)',border:'none',borderRadius:14,padding:'14px 16px',fontSize:14,fontWeight:800,color:'#fff',cursor:'pointer',textAlign:'left',textDecoration:'none',boxSizing:'border-box',marginBottom:8}}>
                       <span style={{fontSize:22}}>📧</span>
                       <div style={{flex:1}}>
-                        <div>Open Gmail — search pre-filled</div>
-                        <div style={{fontSize:11,fontWeight:400,color:'#BFDBFE',marginTop:2}}>Click the ▼ dropdown in the search bar → "Create filter" → tick "Forward to" → paste your address</div>
+                        <div>Open Gmail Filters Settings</div>
+                        <div style={{fontSize:11,fontWeight:400,color:'#BFDBFE',marginTop:2}}>Gmail → Settings → Filters and Blocked Addresses</div>
                       </div>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
                     </a>
+
+                    {/* Forward-to address */}
                     <div style={{background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:12,padding:'10px 12px',display:'flex',alignItems:'center',gap:10}}>
                       <span style={{fontSize:16}}>📋</span>
                       <div style={{flex:1}}>
-                        <p style={{fontSize:10,fontWeight:700,color:'#15803D',marginBottom:2}}>PASTE THIS AS "FORWARD TO" ADDRESS</p>
+                        <p style={{fontSize:10,fontWeight:700,color:'#15803D',marginBottom:2}}>YOUR SYNC ADDRESS — PASTE AS "FORWARD TO"</p>
                         <p style={{fontSize:11,fontFamily:'monospace',color:'#15803D',wordBreak:'break-all'}}>{syncEmail}</p>
                       </div>
                       <button onClick={copySyncEmail} style={{background:copied?'#15803D':'#22C55E',border:'none',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,transition:'background .2s'}}>
