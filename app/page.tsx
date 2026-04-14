@@ -302,6 +302,9 @@ export default function App() {
   const [syncLog, setSyncLog] = useState<{store:string;count:number;syncedAt:string;items:string[]}[]>([]);
   const [syncLoading, setSyncLoading] = useState(false);
   const [showSyncSetup, setShowSyncSetup] = useState(false);
+  const [showPasteEmail, setShowPasteEmail] = useState(false);
+  const [pasteEmailText, setPasteEmailText] = useState('');
+  const [pasteEmailLoading, setPasteEmailLoading] = useState(false);
   const [gmailFilterDone, setGmailFilterDone] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState(false);
@@ -526,6 +529,46 @@ export default function App() {
         save({syncLog: data.syncs});
       }
     } catch {}
+  };
+
+  // ── Import from pasted email text (direct webhook call → items from response) ──
+  const importFromEmailText = async () => {
+    if (!pasteEmailText.trim() || !syncUserId) return;
+    setPasteEmailLoading(true);
+    try {
+      const res = await fetch('/api/inbound-email/webhook', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          userId: syncUserId,
+          from: 'order@grab.com',
+          to: syncEmail,
+          subject: 'Your order has been delivered',
+          text: pasteEmailText,
+          html: '',
+        }),
+      });
+      const data = await res.json();
+      if (data.status === 'success' && data.items?.length) {
+        addItems(data.items, {src: `📧 ${data.store || 'Email sync'}`});
+        const entry = {store: data.store||'Email', count:data.items.length, syncedAt:new Date().toISOString(), items:data.items.slice(0,5).map((i:{item_name:string})=>i.item_name)};
+        const newLog = [entry,...syncLog].slice(0,10);
+        setSyncLog(newLog);
+        save({syncLog:newLog});
+        showToast(`🎉 ${data.items.length} items added from ${data.store||'email'}!`);
+        setPasteEmailText('');
+        setShowPasteEmail(false);
+      } else if (data.status === 'skipped') {
+        showToast('Looks like a restaurant order — skipped');
+      } else {
+        showToast('Could not parse items from that email');
+      }
+    } catch (e) {
+      console.error('[importFromEmailText]', e);
+      showToast('Import failed — try again');
+    } finally {
+      setPasteEmailLoading(false);
+    }
   };
 
   // ── Photo / receipt scanner ──────────────────────────────────────
@@ -2118,6 +2161,35 @@ export default function App() {
                 <span style={{fontSize:14,flexShrink:0}}>🔒</span>
                 <p style={{fontSize:11,color:'var(--gray)',lineHeight:1.6}}>Your email is <strong>deleted immediately</strong> after we extract item names and prices. We never store email content, subjects, or sender details.</p>
               </div>
+
+              {/* Manual import — paste old order email */}
+              {syncEmail && (
+                <div style={{marginBottom:12}}>
+                  <button onClick={()=>setShowPasteEmail(v=>!v)}
+                    style={{width:'100%',background:'var(--grayL)',border:'1px solid var(--border)',borderRadius:12,padding:'10px 14px',fontSize:12,fontWeight:700,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit',textAlign:'left',display:'flex',alignItems:'center',gap:8}}>
+                    <span>📋</span> Import from a past order email (one-time)
+                    <svg style={{marginLeft:'auto',transform:showPasteEmail?'rotate(90deg)':'none',transition:'transform .2s'}} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                  {showPasteEmail&&(
+                    <div style={{marginTop:8,padding:12,background:'var(--grayL)',borderRadius:12,border:'1px solid var(--border)'}}>
+                      <p style={{fontSize:11,color:'var(--gray)',marginBottom:8}}>Paste the text of a GrabMart / FoodPanda / Blinkit order confirmation email:</p>
+                      <textarea
+                        value={pasteEmailText}
+                        onChange={e=>setPasteEmailText(e.target.value)}
+                        placeholder="Paste order email text here…"
+                        rows={6}
+                        style={{width:'100%',borderRadius:10,border:'1px solid var(--border)',padding:'10px 12px',fontSize:12,fontFamily:'inherit',resize:'vertical',boxSizing:'border-box',color:'var(--ink)',background:'var(--white)'}}
+                      />
+                      <button
+                        onClick={importFromEmailText}
+                        disabled={pasteEmailLoading||!pasteEmailText.trim()}
+                        style={{marginTop:8,width:'100%',background:pasteEmailLoading||!pasteEmailText.trim()?'#D1D5DB':'var(--navy)',border:'none',borderRadius:10,padding:'11px',fontSize:13,fontWeight:800,color:'#fff',cursor:pasteEmailLoading||!pasteEmailText.trim()?'default':'pointer',fontFamily:'inherit',transition:'background .2s'}}>
+                        {pasteEmailLoading?'Importing…':'Import items →'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Recent sync log */}
               {syncLog.length>0&&(
