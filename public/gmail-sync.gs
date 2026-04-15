@@ -12,35 +12,33 @@ const FRESHNUDGE_WEBHOOK = 'https://echokitchen-lac.vercel.app/api/inbound-email
 const FRESHNUDGE_USER_ID = 'YOUR_USER_ID_HERE';  // e.g. user_rc41spjy
 const LABEL_PROCESSED    = 'FreshNudge/Synced';   // created automatically
 
-// Senders to watch for (add more as needed)
+// Senders to watch — matched against the From address domain
 const WATCHED_SENDERS = [
-  'grab.com', 'grabmart', 'foodpanda', 'pandamart',
+  // Singapore / SEA
+  'grab.com', 'grabmart.com', 'foodpanda.com', 'foodpanda.sg', 'pandamart.com',
+  'redmart.com', 'fairprice.com.sg',
+  // India
   'blinkit.com', 'swiggy.com', 'bigbasket.com', 'zeptonow.com',
-  'instacart.com', 'walmart.com', 'amazon.com',
-  'ocado.com', 'tesco.com', 'woolworths.com.au',
+  // US
+  'instacart.com', 'walmart.com', 'doordash.com',
+  // UK / AU
+  'ocado.com', 'tesco.com', 'sainsburys.co.uk', 'woolworths.com.au', 'coles.com.au',
 ];
 
-// Subject keywords that confirm it's an order confirmation
-const ORDER_KEYWORDS = [
-  'order', 'delivered', 'delivery', 'confirmation', 'receipt', 'invoice',
-  'your purchase', 'thank you for shopping', 'thanks for your order',
-];
 // ─────────────────────────────────────────────────────────────────────────────
+// No subject filter — sender domain alone is the signal.
+// GPT will skip non-order emails (promos, receipts with no items, etc.)
 
 function onNewOrderEmail() {
   const processedLabel = getOrCreateLabel(LABEL_PROCESSED);
 
-  // Build Gmail search query
+  // Build Gmail search query — sender domain only, no subject filtering
   const fromQuery = WATCHED_SENDERS.map(s => `from:${s}`).join(' OR ');
   const threads = GmailApp.search(`(${fromQuery}) -label:${LABEL_PROCESSED} newer_than:7d`, 0, 20);
 
   threads.forEach(thread => {
     const messages = thread.getMessages();
     messages.forEach(msg => {
-      const subject = msg.getSubject().toLowerCase();
-      const isOrderEmail = ORDER_KEYWORDS.some(kw => subject.includes(kw));
-      if (!isOrderEmail) return;
-
       const body = msg.getPlainBody() || msg.getBody().replace(/<[^>]+>/g, ' ');
 
       try {
