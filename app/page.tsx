@@ -153,6 +153,31 @@ function getHistoricalDefault(name: string, history: PurchaseRecord[]): {qty:num
   return Object.values(freq).sort((a,b)=>b.count-a.count)[0];
 }
 
+// ── Estimated retail price by item name (SGD scale, multiplied by region) ──
+const PRICE_ESTIMATES: Record<string,number> = {
+  // Produce
+  strawberry:3, banana:1.5, apple:2, mango:3, grape:4, tomato:1.5, spinach:2,
+  lettuce:2, cucumber:1.5, carrot:1.5, onion:1, potato:1.5, garlic:1,
+  broccoli:2, capsicum:2, avocado:3, lemon:1, lime:1, ginger:1,
+  // Dairy
+  milk:3, yogurt:2.5, cheese:5, butter:4, egg:3, paneer:4, cream:4, ghee:8,
+  // Protein
+  chicken:6, fish:7, prawn:8, mutton:8, tofu:2,
+  // Grains
+  bread:3, rice:5, oats:4, pasta:3, flour:3,
+  // Pantry
+  sugar:3, salt:1.5, oil:4, sauce:3, jam:4, honey:6,
+  // Beverages
+  juice:3, coffee:6, tea:3,
+};
+function estimatePrice(name: string, priceMultiplier: number): number {
+  const lc = name.toLowerCase();
+  const keys = Object.keys(PRICE_ESTIMATES).sort((a,b)=>b.length-a.length);
+  const match = keys.find(k => lc.includes(k));
+  const sgdPrice = match ? PRICE_ESTIMATES[match] : 2; // default $2 SGD
+  return Math.round(sgdPrice / priceMultiplier * 100) / 100; // scale to local currency
+}
+
 // ── Qty adjustment step per unit ─────────────────────────────────
 function getQtyStep(unit: string): number {
   if (['g','ml'].includes(unit)) return 50;
@@ -929,7 +954,7 @@ export default function App() {
   const markWasted=(id:string)=>{
     const item = pantry.find(i=>i.id===id);
     const updatedPantry = pantry.filter(i=>i.id!==id);
-    const updatedWaste = item ? [...wasteLog,{id:uid(),name:item.name,emoji:item.emoji,price:item.price||0,date:new Date().toISOString()}] : wasteLog;
+    const updatedWaste = item ? [...wasteLog,{id:uid(),name:item.name,emoji:item.emoji,price:item.price||estimatePrice(item.name, region.priceMultiplier),date:new Date().toISOString()}] : wasteLog;
     setPantry(updatedPantry); setWasteLog(updatedWaste);
     save({pantry:updatedPantry,wasteLog:updatedWaste});
   };
@@ -1821,12 +1846,15 @@ export default function App() {
       return {label:'The Everyday Cook',desc:'Consistent, reliable, no fuss.',emoji:'🍳'};
     })();
 
-    // ── Waste cost this month (capped per item to avoid stale INR values) ──
+    // ── Waste cost this month ────────────────────────────────────────
     const thisMonth = new Date(); thisMonth.setDate(1); thisMonth.setHours(0,0,0,0);
     const wasteThisMonth = wasteLog.filter(w=>new Date(w.date)>=thisMonth);
-    // Cap individual item waste price to avg takeout cost (sanity check for old unscaled data)
     const maxItemWaste = region.avgTakeout;
-    const wasteCost = wasteThisMonth.reduce((a,w)=>a+Math.min(w.price, maxItemWaste),0);
+    // Use actual price if set; fall back to category estimate so wastage is never 0
+    const wasteCost = wasteThisMonth.reduce((a,w)=>{
+      const price = (w.price && w.price > 0) ? w.price : estimatePrice(w.name, region.priceMultiplier);
+      return a + Math.min(price, maxItemWaste);
+    }, 0);
 
     return (
       <div className="screen" style={{background:'var(--cream)'}}>
