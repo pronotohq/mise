@@ -101,17 +101,6 @@ interface SyncLogFile {
   [userId: string]: SyncLogEntry[];
 }
 
-interface StoredPushSubscription {
-  endpoint: string;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
-}
-
-interface PushSubscriptionsFile {
-  [userId: string]: StoredPushSubscription;
-}
 
 // ---------------------------------------------------------------------------
 // Regional normalization map
@@ -205,7 +194,6 @@ const MAX_SYNC_LOG_ENTRIES = 10;
 // KV keys
 const kvPending  = (uid: string) => `fn:pending:${uid}`;
 const kvSyncLog  = (uid: string) => `fn:synclog:${uid}`;
-const kvPushSub  = (uid: string) => `fn:pushsub:${uid}`;
 const kvUserMap  = (token: string) => `fn:usermap:${token}`;
 
 /**
@@ -340,9 +328,6 @@ async function readSyncLogKV(userId: string): Promise<SyncLogEntry[]> {
   return await kv.get<SyncLogEntry[]>(kvSyncLog(userId)) ?? [];
 }
 
-async function readPushSubKV(userId: string): Promise<StoredPushSubscription | null> {
-  return kv.get<StoredPushSubscription>(kvPushSub(userId));
-}
 
 // ---------------------------------------------------------------------------
 // Inbound payload helpers
@@ -473,38 +458,6 @@ If the email is not an order confirmation at all, return { "store_name": null, "
   }
 }
 
-// ---------------------------------------------------------------------------
-// Push notification (best-effort)
-// ---------------------------------------------------------------------------
-
-async function sendPushNotification(
-  subscription: StoredPushSubscription,
-  title: string,
-  body: string,
-): Promise<void> {
-  // Dynamic import so the entire webhook doesn't crash if web-push is absent.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const webpush = require('web-push');
-
-  const vapidPublicKey  = process.env.VAPID_PUBLIC_KEY;
-  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
-  const vapidEmail      = process.env.VAPID_EMAIL;
-
-  if (!vapidPublicKey || !vapidPrivateKey || !vapidEmail) {
-    console.warn('[inbound-email/webhook] VAPID env vars not set — skipping push.');
-    return;
-  }
-
-  webpush.setVapidDetails(`mailto:${vapidEmail}`, vapidPublicKey, vapidPrivateKey);
-
-  const payload = JSON.stringify({
-    title,
-    body,
-    icon: '/icon-192.png',
-  });
-
-  await webpush.sendNotification(subscription, payload);
-}
 
 // ---------------------------------------------------------------------------
 // Data persistence helpers (KV-backed)
@@ -660,19 +613,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }),
     );
 
-    // 11. Best-effort push notification — never fail the request if this errors.
-    try {
-      const sub = await readPushSubKV(userId);
-      if (sub) {
-        await sendPushNotification(
-          sub,
-          '🛒 Groceries synced!',
-          `Added ${enrichedItems.length} item${enrichedItems.length !== 1 ? 's' : ''} from ${storeName} to your fridge`,
-        );
-      }
-    } catch (pushErr) {
-      console.warn('[inbound-email/webhook] Push notification failed (non-fatal):', pushErr);
-    }
 
     // 12. Return enriched items.
     return NextResponse.json({

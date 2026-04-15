@@ -1,6 +1,4 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  serverExternalPackages: ['web-push', '@anthropic-ai/sdk'],
-};
+const nextConfig = {};
 
 module.exports = nextConfig;
