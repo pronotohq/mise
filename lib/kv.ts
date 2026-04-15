@@ -36,7 +36,7 @@ async function redisCmd(...args: (string | number)[]): Promise<unknown> {
 
 async function redisPipeline(commands: (string | number)[][]): Promise<unknown[]> {
   if (!url || !token) {
-    return commands.map(cmd => redisCmd(...cmd));
+    return Promise.all(commands.map(cmd => redisCmd(...cmd)));
   }
   const res = await fetch(`${url}/pipeline`, {
     method: 'POST',
