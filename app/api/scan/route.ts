@@ -1,6 +1,5 @@
 // app/api/scan/route.ts
-// Receives an image (receipt photo or FoodPanda/Grab screenshot)
-// → GPT-4o Vision extracts grocery items → returns structured list
+// Receives an image (receipt, order screenshot, or fridge photo) → GPT-4o Vision extracts items
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
@@ -20,38 +19,67 @@ export async function POST(req: NextRequest) {
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
-      max_tokens: 1200,
+      max_tokens: 1500,
       response_format: { type: 'json_object' },
       messages: [{
         role: 'user',
         content: [
-          { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}` } },
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}`, detail: 'high' } },
           {
             type: 'text',
-            text: `You are extracting grocery/food items from a receipt, order confirmation screenshot, or grocery app screenshot (FoodPanda, GrabMart, Swiggy, Blinkit, Amazon Fresh, NTUC, Woolworths, etc).
+            text: `You are a smart grocery scanner for a fridge inventory app. Identify ALL food and grocery items in this image.
 
-Return a JSON object with key "items" — an array of objects:
-{ "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }
+This image could be:
+- A receipt or order confirmation — extract every line item
+- A grocery app screenshot (FoodPanda, GrabMart, Swiggy, Blinkit, Amazon Fresh, NTUC, etc.)
+- A FRIDGE or pantry shelf photo — identify everything visible
+- Items in PLASTIC BAGS, cling wrap, or containers — look through packaging
 
-Also return "store": the store/app name if visible, or null.
+FRIDGE/SHELF PHOTO RULES (critical):
+- Identify items even through plastic bags, cling wrap, or packaging
+- Use visual cues: shape, colour, size, any visible text or logos on packaging
+- Green leafy bundle in bag = vegetables (spinach/coriander/lettuce/herbs)
+- Red/orange round item = tomatoes or capsicum
+- Yellow curved item = banana
+- White liquid in clear bottle = milk
+- Orange root vegetable = carrot
+- Purple/white bulb = onion or garlic
+- Brown wrapped parcel = meat or paneer
+- Eggs in tray or bowl = eggs
+- Clear bag with green = cucumber or zucchini
+- Be GENEROUS — better to identify imprecisely than miss an item entirely
+- If you see multiple items in one bag, list each separately
+
+Return JSON:
+{
+  "items": [
+    { "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }
+  ],
+  "store": string | null,
+  "image_type": "receipt" | "screenshot" | "fridge_photo" | "other"
+}
 
 Rules:
-- item_name: clean title-case singular (e.g. "Whole Milk", "Chicken Breast", "Brown Eggs")
-- quantity: numeric (default 1)
+- item_name: clean title-case singular (e.g. "Fresh Spinach", "Whole Milk", "Chicken Breast")
+- quantity: numeric, default 1 if unclear
 - unit: "g" | "kg" | "ml" | "L" | "pcs" | "loaf" | "bunch" | "packet" | "dozen" | "box"
 - category: "Produce" | "Dairy" | "Protein" | "Grains" | "Snacks" | "Beverages" | "Condiments" | "Frozen" | "Other"
-- emoji: one relevant emoji per item
-- Skip delivery fees, packaging, promotions, non-food items
+- emoji: one relevant emoji
+- Skip non-food items, delivery fees, promotions
 - Diet context: ${dietary.isVeg ? 'vegetarian' : 'omnivore'}${dietary.eatsEggs ? ', eats eggs' : ''}
 
-If this is not a grocery/food receipt, return { "items": [], "store": null }.`
+If nothing identifiable: { "items": [], "store": null, "image_type": "other" }`
           }
         ]
       }]
     });
 
     const content = JSON.parse(response.choices[0].message.content ?? '{"items":[]}');
-    return NextResponse.json({ items: content.items ?? [], store: content.store ?? null });
+    return NextResponse.json({
+      items: content.items ?? [],
+      store: content.store ?? null,
+      image_type: content.image_type ?? 'other',
+    });
 
   } catch (err) {
     console.error('Scan error:', err);

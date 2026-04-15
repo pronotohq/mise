@@ -511,18 +511,15 @@ export default function App() {
     } catch { showToast('Copy failed — tap and hold to copy'); }
   };
 
-  // ── Auto-sync: poll for pending items (2x/day: 9 AM & 6 PM, or focus after 6h gap) ─────────
+  // ── Auto-sync: check for pending items on every open/focus (throttled to 2 min) ─────────────
   useEffect(() => {
     const checkPending = async () => {
       const uid_ = syncUserId;
       if (!uid_ || !syncEmail) return;
-      // Time-gate: only sync at 9:00–9:30 AM or 18:00–18:30 PM, or if focus after 6h gap
-      const now = new Date();
-      const h = now.getHours(), mm = now.getMinutes();
-      const inWindow = (h === 9 && mm < 30) || (h === 18 && mm < 30);
-      const lastSync = parseInt(localStorage.getItem('lastSyncTs') || '0');
-      const sinceLastSync = Date.now() - lastSync;
-      if (!inWindow && sinceLastSync < 6 * 3600000) return;
+      // Throttle: at most once every 2 minutes to avoid hammering KV
+      const lastCheck = parseInt(localStorage.getItem('lastSyncCheckTs') || '0');
+      if (Date.now() - lastCheck < 2 * 60 * 1000) return;
+      localStorage.setItem('lastSyncCheckTs', Date.now().toString());
       try {
         const res = await fetch(`/api/inbound-email/pending?userId=${uid_}`);
         const data = await res.json();
@@ -533,7 +530,6 @@ export default function App() {
           setSyncLog(newLog);
           save({syncLog:newLog});
           showToast(`🎉 ${data.items.length} items synced from ${data.store||'email'}!`);
-          localStorage.setItem('lastSyncTs', Date.now().toString());
         }
       } catch {} // silent — polling should never crash the app
     };

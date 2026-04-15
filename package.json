@@ -14,8 +14,7 @@
     "openai": "^4.52.0",
     "@anthropic-ai/sdk": "^0.39.0",
     "formidable": "^3.5.1",
-    "web-push": "^3.6.7",
-    "@vercel/kv": "^2.0.0"
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^20",

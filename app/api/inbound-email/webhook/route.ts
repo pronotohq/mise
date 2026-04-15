@@ -30,7 +30,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import crypto from 'crypto';
-import { kv } from '@vercel/kv';
+import { kv } from '@/lib/kv';
 
 // ---------------------------------------------------------------------------
 // Types

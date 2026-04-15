@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { kv } from '@vercel/kv';
+import { kv } from '@/lib/kv';
 
 const INBOUND_DOMAIN = 'inbound.freshnudge.app';
 const SECRET = process.env.SYNC_EMAIL_SECRET || 'freshnudge-sync-secret-change-in-prod';
