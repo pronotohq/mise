@@ -1964,12 +1964,6 @@ export default function App() {
             </div>
           )}
 
-          {!isPremium&&(
-            <button onClick={()=>setShowPremium(true)} style={{width:'100%',background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #F59E0B',borderRadius:16,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
-              <div style={{width:40,height:40,borderRadius:20,background:'#F59E0B',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>👑</div>
-              <div style={{textAlign:'left'}}><div style={{fontWeight:800,fontSize:14,color:'#92400E'}}>Unlock full insights</div><div style={{fontSize:12,color:'#B45309',marginTop:2}}>Weekly trends, spending by store, 30-day waste report</div></div>
-            </button>
-          )}
         </div>
       </div>
     );
