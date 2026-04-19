@@ -2406,7 +2406,7 @@ export default function App() {
               )}
             </div>
           )}
-        </div>
+        </div>)}
 
         {/* Reset */}
         <button onClick={()=>{ if(confirm('Reset all data and restart onboarding?')){localStorage.removeItem('mise_v1');window.location.reload();} }}
