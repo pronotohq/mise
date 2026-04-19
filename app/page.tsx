@@ -136,48 +136,48 @@ function Confetti({on}:{on:boolean}) {
   );
 }
 
-// ── Swipeable Pantry Row ───────────────────────────────────────────
-function PantryRow({item,onUsed,onWasted,onEditExpiry}:{item:PantryItem;onUsed:(id:string)=>void;onWasted:(id:string)=>void;onEditExpiry:(item:PantryItem)=>void}) {
-  const [dx,setDx]=useState(0),[gone,setGone]=useState(false);
-  const sX=useRef<number|null>(null),drag=useRef(false);
+// ── Category tints (for letter-avatar backgrounds) ────────────────
+const CAT_TINT: Record<string,{bg:string;fg:string}> = {
+  Produce:    {bg:'#E8F3E4', fg:'#2F5233'},
+  Dairy:      {bg:'#EEF1F7', fg:'#35405E'},
+  Protein:    {bg:'#F5E8DE', fg:'#6A3F1F'},
+  Grains:     {bg:'#F3EEDB', fg:'#6A5214'},
+  Snacks:     {bg:'#F1E4E8', fg:'#73294A'},
+  Beverages:  {bg:'#E4EEF1', fg:'#1F4A5C'},
+  Condiments: {bg:'#F2EDE4', fg:'#544326'},
+  Frozen:     {bg:'#E4ECF1', fg:'#3A4C5E'},
+  Spices:     {bg:'#F1E4E8', fg:'#73294A'},
+  Other:      {bg:'#ECEBE6', fg:'#4A4843'},
+};
+function catTint(cat: string) { return CAT_TINT[cat] ?? CAT_TINT.Other; }
+
+// ── Fridge Item row (click to open) ────────────────────────────────
+function FridgeItem({item,onClick,currencySymbol}:{item:PantryItem;onClick:()=>void;currencySymbol:string}) {
   const dl = daysLeft(item.expiry);
-  const urgent = dl <= 1;
-
-  const start=(x:number)=>{sX.current=x;drag.current=true;};
-  const move=(x:number)=>{if(!drag.current)return;setDx(Math.max(-115,Math.min(115,x-sX.current!)));};
-  const end=()=>{
-    if(!drag.current)return;drag.current=false;
-    if(dx>80){setGone(true);setTimeout(()=>onUsed(item.id),280);}
-    else if(dx<-80){setGone(true);setTimeout(()=>onWasted(item.id),280);}
-    else setDx(0);
-  };
-
-  if(gone) return null;
-
-  const gn=dx>20,rd=dx<-20;
+  const tintColor = dl<=1 ? '#C94A3A' : dl<=4 ? '#C68A2E' : '#4A6B3A';
+  const ct = catTint(item.cat);
   return (
-    <div className="swipe-row" style={{marginBottom:8}}>
-      <div className="swipe-bg" style={{background:gn?'linear-gradient(90deg,#86A87A,#4A6B3A)':rd?'linear-gradient(270deg,#C94A3A,#A8382A)':'#F0F2F5'}}>
-        <div style={{display:'flex',alignItems:'center',gap:6,color:'#14532D',fontWeight:800,fontSize:13}}>✓ Used!</div>
-        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,color:'#7F1D1D',fontWeight:800,fontSize:13}}>Wasted 🗑</div>
+    <button onClick={onClick} style={{
+      display:'flex',alignItems:'center',gap:12,
+      background:'var(--white)',border:'1px solid var(--border)',
+      borderRadius:14,padding:'12px 14px',
+      fontFamily:'inherit',cursor:'pointer',textAlign:'left',width:'100%',
+      borderLeft:`3px solid ${tintColor}`,
+    }}>
+      <div style={{
+        width:40,height:40,borderRadius:10,background:ct.bg,
+        display:'flex',alignItems:'center',justifyContent:'center',
+        flexShrink:0,fontFamily:'var(--serif)',fontSize:16,fontWeight:500,color:ct.fg,
+      }}>{item.name.charAt(0).toUpperCase()}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:700,color:'var(--ink)',letterSpacing:-.1}}>{item.name}</div>
+        <div style={{fontSize:11.5,color:'var(--gray)',marginTop:2}}>{item.qty}{item.unit} · {item.cat} · {item.src==='🎙️'?'voice':item.src==='✍️'?'manual':item.src==='📷'?'scan':item.src}</div>
       </div>
-      <div
-        className="swipe-card"
-        style={{transform:`translateX(${dx}px)`,transition:drag.current?'none':'transform .28s cubic-bezier(.34,1.56,.64,1)',borderColor:urgent?'#FCA5A540':'var(--border)'}}
-        onMouseDown={e=>start(e.clientX)} onMouseMove={e=>{if(e.buttons)move(e.clientX);}} onMouseUp={end} onMouseLeave={end}
-        onTouchStart={e=>start(e.touches[0].clientX)} onTouchMove={e=>{e.preventDefault();move(e.touches[0].clientX);}} onTouchEnd={end}
-      >
-        <span style={{fontSize:24}}>{item.emoji}</span>
-        <div style={{flex:1}}>
-          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
-            <span style={{fontWeight:800,fontSize:14,color:'var(--ink)'}}>{item.name}</span>
-            <span className={urgent?'pill pill-red':'pill pill-green'}>{urgent?'⚠ ':''}{fmtDays(dl)}</span>
-          </div>
-          <span style={{fontSize:11,color:'var(--gray)'}}>{item.qty}{item.unit} · {item.src}</span>
-        </div>
-        <button onClick={()=>onEditExpiry(item)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--gray)',fontSize:11,fontWeight:700,textDecoration:'underline',padding:'4px',flexShrink:0}}>edit</button>
+      <div style={{textAlign:'right',flexShrink:0}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:11.5,fontWeight:700,color:tintColor,letterSpacing:.3}}>{fmtDays(dl)}</div>
+        {item.price>0&&<div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>{currencySymbol}{item.price}</div>}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -249,7 +249,7 @@ export default function App() {
   };
 
   // ── Onboarding ──────────────────────────────────────────────────
-  const OB_STEPS = ['welcome','country','name','family','diet','sources','notifications','done'];
+  const OB_STEPS = ['welcome','name','family','diet','sources','notifications','done'];
   const obPct = Math.round(((obStep+1)/OB_STEPS.length)*100);
 
   const completeOnboarding = () => {
@@ -382,7 +382,8 @@ export default function App() {
     if(meals[p] && !force) return;
     setLoadingMeals(true);
     try {
-      const recentlyCooked = cookLog.slice(0,20).map(l=>l.name);
+      const sevenDaysAgo = Date.now() - 7*86400000;
+      const recentlyCooked = cookLog.filter(l=>new Date(l.date).getTime()>=sevenDaysAgo).map(l=>l.name);
       const res  = await fetch('/api/meals', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -466,83 +467,67 @@ export default function App() {
 
         {step==='welcome'&&(
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(180deg,var(--cream) 0%,var(--surf) 100%)'}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:2,color:'var(--navy)',marginBottom:18}}>MISE</div>
-            <h1 style={{fontFamily:'var(--serif)',fontSize:38,fontWeight:500,color:'var(--ink)',letterSpacing:-.6,marginBottom:10,textAlign:'center',lineHeight:1.05}}>Dinner answers,<br/>from your fridge.</h1>
-            <p style={{fontSize:14,color:'var(--gray)',textAlign:'center',lineHeight:1.6,marginBottom:40,maxWidth:300}}>For the parents, the couples, the ones running between meetings and bedtime. We track what you have, and tell you what to cook.</p>
+            <div style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:2,color:'var(--navy)',marginBottom:18}}>FRESHNUDGE</div>
+            <h1 style={{fontFamily:'var(--serif)',fontSize:38,fontWeight:500,color:'var(--ink)',letterSpacing:-.6,marginBottom:14,textAlign:'center',lineHeight:1.05}}>Your fridge just<br/>got smarter.</h1>
+            <p style={{fontSize:14,color:'var(--gray)',textAlign:'center',lineHeight:1.6,marginBottom:40,maxWidth:320}}>Waste less. Eat better. FreshNudge tracks what&apos;s in your fridge, nudges you before things expire, and suggests meals using what you already have.</p>
             <button className="btn-primary" onClick={()=>setObStep(1)} style={{background:'var(--navy)',fontSize:15,padding:16}}>Get started →</button>
             <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginTop:20,textAlign:'center'}}>60 SECONDS · NO SIGNUP</p>
           </div>
         )}
 
-        {step==='country'&&(
-          <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>Where do you shop?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>We&apos;ll tailor currency and grocery apps to your country.</p>
-            {COUNTRIES.map(c=>(
-              <div key={c.id} onClick={()=>setProfile(p=>({...p,country:c.id,city:c.cities[0]}))}
-                style={{background:profile.country===c.id?'#FAF2EE':'',border:`1.5px solid ${profile.country===c.id?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:14,display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'pointer'}}>
-                <span style={{fontSize:28}}>{c.flag}</span>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:15,fontWeight:800,color:'var(--ink)'}}>{c.label}</div>
-                  <div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>{CURRENCY[c.id].symbol} {CURRENCY[c.id].code} · {STORES[c.id].map(s=>s.name).join(' · ')}</div>
-                </div>
-                {profile.country===c.id&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800}}>✓</div>}
-              </div>
-            ))}
-          </div>
-        )}
-
         {step==='name'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What&apos;s your name?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>We&apos;ll personalise everything for you.</p>
+            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What should we call you?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>So your nudges feel personal, not robotic.</p>
             <input type="text" value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
-              placeholder="Your first name" style={{width:'100%',marginBottom:20,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
-            <p style={{fontSize:13,fontWeight:700,color:'var(--gray)',marginBottom:10}}>Your city</p>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              {(COUNTRIES.find(c=>c.id===profile.country)?.cities ?? []).map(c=>(
-                <div key={c} onClick={()=>setProfile(p=>({...p,city:c}))}
-                  style={{background:profile.city===c?'#FAF2EE':'',border:`1.5px solid ${profile.city===c?'var(--navy)':'var(--border)'}`,borderRadius:12,padding:11,textAlign:'center',fontSize:13,fontWeight:profile.city===c?700:500,color:profile.city===c?'var(--navy)':'var(--ink)',cursor:'pointer'}}>
-                  {c}
-                </div>
-              ))}
-            </div>
+              placeholder="Your first name" style={{width:'100%',marginBottom:4,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
           </div>
         )}
 
         {step==='family'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>Who are you<br/>cooking for?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Every recipe adapts to your family.</p>
-            <div style={{marginBottom:14}}>
-              <p style={{fontSize:13,fontWeight:700,color:'var(--gray)',marginBottom:8}}>Family size</p>
-              <div style={{display:'flex',gap:8}}>
-                {[1,2,3,4,'5+'].map(n=>(
-                  <div key={n} onClick={()=>setProfile(p=>({...p,familySize:typeof n==='number'?n:5}))}
-                    style={{flex:1,background:profile.familySize===(typeof n==='number'?n:5)?'#FAF2EE':'var(--grayL)',border:`1.5px solid ${profile.familySize===(typeof n==='number'?n:5)?'var(--navy)':'var(--border)'}`,borderRadius:12,padding:'10px 0',textAlign:'center',fontSize:14,fontWeight:700,color:profile.familySize===(typeof n==='number'?n:5)?'var(--navy)':'var(--ink)',cursor:'pointer'}}>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>Who&apos;s at the table?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Portion sizes adapt to your household.</p>
+            <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>FAMILY SIZE</p>
+            <div style={{display:'flex',gap:8,marginBottom:22}}>
+              {[1,2,3,4,'5+'].map(n=>{
+                const val = typeof n==='number'?n:5;
+                const active = profile.familySize===val;
+                return (
+                  <div key={n} onClick={()=>setProfile(p=>({...p,familySize:val}))}
+                    style={{flex:1,background:active?'var(--ink)':'var(--white)',border:`1.5px solid ${active?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'14px 0',textAlign:'center',fontFamily:'var(--serif)',fontSize:22,fontWeight:500,color:active?'var(--cream)':'var(--ink)',cursor:'pointer'}}>
                     {n}
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
-            <div style={{background:'#FEF9C3',border:'1.5px solid #FCD34D',borderRadius:14,padding:14,marginBottom:14}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:profile.hasToddler?12:0}}>
-                <div>
-                  <p style={{fontSize:14,fontWeight:800,color:'#92400E',marginBottom:2}}>Do you have a toddler? (under 3)</p>
-                  <p style={{fontSize:12,color:'#B45309'}}>We&apos;ll auto-check every recipe for safety</p>
+            <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>KIDS AT HOME?</p>
+            <div style={{display:'flex',gap:8,marginBottom:14}}>
+              {[[false,'No kids','Skip kid-safe filter'],[true,'Yes, a little one','Enable safety filter']].map(([val,lb,sub])=>{
+                const active = profile.hasToddler===val;
+                return (
+                  <div key={lb as string} onClick={()=>setProfile(p=>({...p,hasToddler:val as boolean}))}
+                    style={{flex:1,background:active?'var(--ink)':'var(--white)',border:`1.5px solid ${active?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',cursor:'pointer'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:active?'var(--cream)':'var(--ink)'}}>{lb}</div>
+                    <div style={{fontSize:11,color:active?'var(--cream)':'var(--gray)',opacity:active?.8:1,marginTop:2}}>{sub}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {profile.hasToddler&&(
+              <div style={{background:'var(--white)',border:`1px solid var(--border)`,borderRadius:14,padding:14}}>
+                <div style={{fontSize:12,color:'var(--gray)',marginBottom:8}}>Auto-filtered from all suggestions:</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+                  {['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt'].map(f=>(
+                    <span key={f} style={{fontSize:11,padding:'5px 10px',borderRadius:999,background:'var(--cream)',color:'var(--ink)',fontWeight:500}}>✕ {f}</span>
+                  ))}
                 </div>
-                <div onClick={()=>setProfile(p=>({...p,hasToddler:!p.hasToddler}))}
-                  style={{width:44,height:24,borderRadius:12,background:profile.hasToddler?'#4A6B3A':'#D1D5DB',cursor:'pointer',position:'relative',transition:'background .2s'}}>
-                  <div style={{position:'absolute',top:2,left:profile.hasToddler?20:2,width:20,height:20,borderRadius:10,background:'#fff',transition:'left .2s',boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
-                </div>
-              </div>
-              {profile.hasToddler&&(
-                <div style={{display:'flex',gap:8,marginTop:10}}>
-                  <input type="text" placeholder="Name (e.g. Avya)" value={profile.toddlerName} onChange={e=>setProfile(p=>({...p,toddlerName:e.target.value}))} style={{flex:2}}/>
+                <div style={{display:'flex',gap:8}}>
+                  <input type="text" placeholder="Little one's name (e.g. Avya)" value={profile.toddlerName} onChange={e=>setProfile(p=>({...p,toddlerName:e.target.value}))} style={{flex:2}}/>
                   <input type="number" placeholder="Age" value={profile.toddlerAge||''} onChange={e=>setProfile(p=>({...p,toddlerAge:parseInt(e.target.value)||2}))} style={{flex:1,textAlign:'center'}}/>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -571,24 +556,44 @@ export default function App() {
 
         {step==='sources'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>How you&apos;ll add groceries</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Voice is ready now. More ways coming soon.</p>
-            {[['🎙️','Voice note','Tap and say what you bought',true],['📧','Email sync','Amazon, Swiggy, Blinkit — Premium v2',false],['📸','Scan receipt','Photo any paper bill — Premium v2',false]].map(([ic,lb,sub,on])=>(
-              <div key={lb as string} style={{background:on?'#FAF2EE':'var(--grayL)',border:`1.5px solid ${on?'#F4D8C8':'var(--border)'}`,borderRadius:13,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
-                <span style={{fontSize:22}}>{ic}</span>
-                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{lb}</div><div style={{fontSize:11,color:'var(--gray)'}}>{sub}</div></div>
-                <div style={{width:34,height:19,borderRadius:10,background:on?'#4A6B3A':'#D1D5DB',display:'flex',alignItems:'center',flexShrink:0}}>
-                  <div style={{width:15,height:15,borderRadius:8,background:'#fff',marginLeft:on?17:2,boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>How do you want to add groceries?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Pick what works for you — you can always change later.</p>
+            {[
+              {id:'photo' as const, icon:'📸', lb:'Photo my fridge',  sub:'Snap one photo of your open fridge — AI finds everything'},
+              {id:'voice' as const, icon:'🎙️', lb:'Voice',            sub:'Say "2 mangoes, 400g curd, 1L milk" — done'},
+            ].map(o=>{
+              const active = addMethodChoice===o.id;
+              return (
+                <div key={o.id} onClick={()=>setAddMethodChoice(o.id)}
+                  style={{background:active?'#FAF2EE':'var(--white)',border:`1.5px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'pointer'}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:'var(--cream)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>{o.icon}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>{o.lb}</div>
+                    <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{o.sub}</div>
+                  </div>
+                  {active&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0}}>✓</div>}
                 </div>
+              );
+            })}
+            <div style={{background:'var(--white)',border:'1.5px dashed var(--border)',borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'flex-start',gap:14,marginBottom:10}}>
+              <div style={{width:44,height:44,borderRadius:12,background:'var(--cream)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>🛒</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'inline-block',fontSize:10,fontWeight:700,color:'var(--navy)',background:'#FAF2EE',padding:'2px 8px',borderRadius:999,marginBottom:4,letterSpacing:.4}}>Coming soon</div>
+                <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>Order → Fridge sync</div>
+                <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Auto-sync from your grocery orders</div>
+                <div style={{fontSize:12,color:'var(--ink)',marginTop:8}}>Would you want auto-sync for Swiggy Instamart + Blinkit?</div>
+                <button onClick={()=>setOrderSyncInterest(v=>!v)} style={{marginTop:8,background:orderSyncInterest?'var(--navy)':'transparent',color:orderSyncInterest?'#fff':'var(--navy)',border:`1.5px solid var(--navy)`,borderRadius:999,padding:'6px 14px',fontSize:12,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}>
+                  {orderSyncInterest?'✓ You\u2019re on the list':'Yes, count me in'}
+                </button>
               </div>
-            ))}
+            </div>
           </div>
         )}
 
         {step==='notifications'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>When should I tell<br/>you what to cook?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Set a time for each meal — I&apos;ll suggest recipes automatically.</p>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>When should we nudge you?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22,lineHeight:1.5}}>We&apos;ll remind you before things expire and suggest what to eat. Change anytime in settings.</p>
             {[['☀️','Breakfast','breakfast'],['🌤️','Lunch','lunch'],['🍎','Snack','snack'],['🌙','Dinner','dinner']].map(([ic,lb,key])=>(
               <div key={key as string} style={{background:'var(--grayL)',border:'1px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
                 <div style={{width:38,height:38,borderRadius:10,background:'var(--white)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{ic}</div>
@@ -600,22 +605,13 @@ export default function App() {
         )}
 
         {step==='done'&&(
-          <div style={{flex:1,padding:'28px 22px'}}>
-            <div style={{textAlign:'center',marginBottom:28}}>
-              <div style={{fontSize:52,marginBottom:12}}>🎉</div>
-              <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>You&apos;re all set{profile.name?`, ${profile.name}`:''}!</h2>
-              <p style={{fontSize:13,color:'var(--gray)',marginTop:6}}>Your kitchen now thinks for itself.</p>
+          <div style={{flex:1,padding:'40px 28px',display:'flex',flexDirection:'column',justifyContent:'center'}}>
+            <div style={{textAlign:'center',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:2,color:'var(--navy)',marginBottom:14}}>READY{profile.name?`, ${profile.name.toUpperCase()}`:''}</div>
+              <h2 style={{fontFamily:'var(--serif)',fontSize:36,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,lineHeight:1.1}}>Welcome{profile.name?`, ${profile.name}`:''}<br/>— you are all set.</h2>
+              <p style={{fontSize:14,color:'var(--gray)',marginTop:14,lineHeight:1.5}}>We&apos;ve seeded your fridge with a typical weeknight stash so you can see FreshNudge in action. Swap it out as you shop.</p>
             </div>
-            <div className="card" style={{marginBottom:24}}>
-              {[['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety filter ON`:''}`],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['📍','Location',`${profile.city}, ${COUNTRIES.find(c=>c.id===profile.country)?.label ?? ''}`],['🔔','Notifications','All 4 meal periods set']].map(([ic,lb,val],i,arr)=>(
-                <div key={lb} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
-                  <div style={{width:34,height:34,borderRadius:10,background:'var(--grayL)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{ic}</div>
-                  <div style={{flex:1}}><div style={{fontSize:11,color:'var(--gray)'}}>{lb}</div><div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>{val}</div></div>
-                  <div style={{width:8,height:8,borderRadius:4,background:'#4A6B3A'}}/>
-                </div>
-              ))}
-            </div>
-            <button className="btn-primary" onClick={completeOnboarding} style={{fontSize:16,padding:16}}>Enter my kitchen →</button>
+            <button className="btn-primary" onClick={completeOnboarding} style={{fontSize:15,padding:16,marginTop:24}}>Open my fridge →</button>
           </div>
         )}
 
@@ -631,108 +627,151 @@ export default function App() {
   // ════════════════════════════════════════════════
   // FRIDGE SCREEN
   // ════════════════════════════════════════════════
-  const renderFridge = () => (
-    <div className="screen" style={{background:'var(--cream)'}}>
-      {/* Header */}
-      <div style={{padding:'14px 16px 8px'}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-          <div>
-            <h1 style={{fontSize:26,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>My Fridge</h1>
-            <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{pantry.length} items · {urgent.length} expiring today</p>
+  const [fridgeFilter, setFridgeFilter] = useState('all');
+  const [openItem, setOpenItem] = useState<PantryItem|null>(null);
+
+  const renderFridge = () => {
+    const hour = new Date().getHours();
+    const greet = hour<12?'MORNING':hour<17?'AFTERNOON':'EVENING';
+    const value = pantry.reduce((s,i)=>s+(i.price||0),0);
+    const ccy = CURRENCY[profile.country].symbol;
+    const urgentItems = urgent;
+    const soonItems   = expiring;
+
+    // Distinct cat chips that actually exist in the pantry
+    const cats = Array.from(new Set(pantry.map(i=>i.cat)));
+
+    // Apply filter
+    let filtered = [...pantry].sort((a,b)=>a.expDays-b.expDays);
+    if (search) filtered = filtered.filter(i=>i.name.toLowerCase().includes(search.toLowerCase()));
+    else if (fridgeFilter==='urgent') filtered = filtered.filter(i=>daysLeft(i.expiry)<=4);
+    else if (fridgeFilter!=='all')    filtered = filtered.filter(i=>i.cat===fridgeFilter);
+
+    const bucketed = (bucket:'urgent'|'soon'|'fresh') => filtered.filter(i=>{
+      const d = daysLeft(i.expiry);
+      if (bucket==='urgent') return d<=1;
+      if (bucket==='soon')   return d>1 && d<=4;
+      return d>4;
+    });
+
+    return (
+      <div className="screen" style={{background:'var(--cream)'}}>
+        {/* Hero */}
+        <div style={{padding:'18px 20px 16px',background:'var(--surf)',borderBottom:'1px solid var(--border)'}}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+            <div>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)'}}>{greet}, {(profile.name||'FRIEND').toUpperCase()}</div>
+              <h1 style={{fontFamily:'var(--serif)',fontSize:30,color:'var(--ink)',margin:'4px 0 0',letterSpacing:-.5,fontWeight:500,lineHeight:1.1}}>Your fridge</h1>
+            </div>
+            <button onClick={()=>setShowAdd(true)} style={{background:'var(--navy)',color:'#fff',border:'none',borderRadius:999,padding:'10px 16px',fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',gap:6,fontFamily:'inherit'}}>
+              <svg width="14" height="14" viewBox="0 0 14 14"><line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+              Add
+            </button>
           </div>
-          <button onClick={()=>setShowAdd(v=>!v)} className="btn-primary" style={{width:'auto',padding:'9px 14px',fontSize:13,gap:5}}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><line x1="7.5" y1="1" x2="7.5" y2="14" stroke="#fff" strokeWidth="2" strokeLinecap="round"/><line x1="1" y1="7.5" x2="14" y2="7.5" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
-            Add
-          </button>
+          <div style={{display:'flex',gap:8,marginTop:16}}>
+            <FridgeStat label="ITEMS"    value={pantry.length}/>
+            <FridgeStat label="URGENT"   value={urgentItems.length} tone="urgent"/>
+            <FridgeStat label="USE SOON" value={soonItems.length}   tone="soon"/>
+            <FridgeStat label="VALUE"    value={`${ccy}${value}`}/>
+          </div>
         </div>
 
-        {/* Voice Add Panel */}
-        {showAdd&&(
-          <div className="card" style={{marginBottom:12,animation:'fadeIn .2s'}}>
-            <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:12}}>ADD TO FRIDGE BY VOICE</p>
-            <button onClick={startVoice}
-              style={{width:'100%',background:recording?'#FEE2E2':'#FAF2EE',border:`1.5px solid ${recording?'#FCA5A5':'#F4D8C8'}`,borderRadius:14,padding:'16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
-              <div style={{width:48,height:48,borderRadius:24,background:recording?'var(--red)':'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'background .2s'}}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-                </svg>
-              </div>
-              <div style={{textAlign:'left'}}>
-                <div style={{fontSize:14,fontWeight:800,color:recording?'var(--red)':'var(--navy)'}}>{recording?'Listening…':'Tap to speak'}</div>
-                <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Say what you bought — e.g. &quot;2 mangoes, 400g curd&quot;</div>
-              </div>
-            </button>
-            {voiceTranscript&&<div style={{marginTop:10,background:'var(--grayL)',borderRadius:12,padding:'11px 14px',fontSize:13,color:'var(--gray)',fontStyle:'italic'}}>🎙️ &ldquo;{voiceTranscript}&rdquo;</div>}
+        {/* Rescue tonight */}
+        {urgentItems.length>0&&(
+          <div style={{padding:'16px 16px 0'}}>
+            <div style={{background:'linear-gradient(135deg,#C94A3A 0%,#A8382A 100%)',borderRadius:14,padding:16,color:'#fff',position:'relative',overflow:'hidden'}}>
+              <div style={{position:'absolute',right:-20,top:-20,width:120,height:120,borderRadius:120,background:'rgba(255,255,255,0.08)'}}/>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.5,opacity:.85}}>RESCUE TONIGHT</div>
+              <div style={{fontFamily:'var(--serif)',fontSize:22,fontWeight:500,marginTop:4,letterSpacing:-.3}}>{urgentItems.length} item{urgentItems.length>1?'s':''} want{urgentItems.length===1?'s':''} cooking today</div>
+              <div style={{fontSize:12,opacity:.92,marginTop:4}}>{urgentItems.slice(0,3).map(i=>i.name).join(' · ')}</div>
+              <button onClick={()=>setTab('meals')} style={{marginTop:12,background:'#fff',color:'#C94A3A',border:'none',borderRadius:999,padding:'8px 14px',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>See tonight&apos;s recipes →</button>
+            </div>
           </div>
         )}
-
-        {/* Go to meals CTA */}
-        <button onClick={()=>setTab('meals')} style={{width:'100%',background:'linear-gradient(135deg,var(--navy),var(--navyD))',border:'none',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',marginBottom:10}}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#86A87A" strokeWidth="2" strokeLinecap="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>
-          <div style={{flex:1,textAlign:'left'}}>
-            <div style={{color:'#fff',fontWeight:800,fontSize:14}}>What can I make right now?</div>
-            <div style={{color:'#E8C5A0',fontSize:11,marginTop:2}}>{pantry.length} items · breakfast, lunch, snack, dinner</div>
-          </div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E8C5A0" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
 
         {/* Search */}
-        <div style={{display:'flex',alignItems:'center',gap:10,background:'var(--white)',border:'1px solid var(--border)',borderRadius:12,padding:'9px 14px',marginBottom:6}}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--gray)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search your fridge…" style={{flex:1,background:'none',borderRadius:0,padding:0,border:'none',outline:'none'}}/>
+        <div style={{padding:'16px 16px 10px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'var(--surf)',border:'1px solid var(--border)',borderRadius:999}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="var(--gray)" strokeWidth="1.8"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="var(--gray)" strokeWidth="1.8" strokeLinecap="round"/></svg>
+            <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search fridge…" style={{flex:1,border:'none',outline:'none',background:'transparent',fontSize:13.5,color:'var(--ink)'}}/>
+          </div>
         </div>
 
-        {/* Swipe hint */}
-        {!search&&<div style={{display:'flex',justifyContent:'center',gap:8,fontSize:11,marginBottom:4}}>
-          <span style={{color:'var(--sage)',fontWeight:700}}>← Swipe: Used ✓</span>
-          <span style={{color:'var(--gray)'}}>·</span>
-          <span style={{color:'var(--red)',fontWeight:700}}>Wasted ✗ →</span>
-        </div>}
-      </div>
+        {/* Filter chips */}
+        <div style={{padding:'2px 16px 14px',display:'flex',gap:6,overflow:'auto',scrollbarWidth:'none'}}>
+          <button onClick={()=>setFridgeFilter('all')} style={chipStyle(fridgeFilter==='all','dark')}>All {pantry.length}</button>
+          {urgentItems.length+soonItems.length>0&&<button onClick={()=>setFridgeFilter('urgent')} style={chipStyle(fridgeFilter==='urgent','urgent')}>● Use soon</button>}
+          {cats.map(c=>(
+            <button key={c} onClick={()=>setFridgeFilter(c)} style={chipStyle(fridgeFilter===c,'neutral')}>{c}</button>
+          ))}
+        </div>
 
-      {/* Item list */}
-      <div style={{background:'var(--surf)',padding:'4px 14px 24px',minHeight:200}}>
-        {searched ? (
-          searched.length===0
-            ? <p style={{textAlign:'center',padding:'40px',color:'var(--gray)'}}>&ldquo;{search}&rdquo; not in fridge</p>
-            : searched.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)
-        ) : (
-          <>
-            {urgent.length>0&&<>
-              <div style={{display:'flex',alignItems:'center',gap:7,marginTop:12,marginBottom:8}}>
-                <div style={{width:8,height:8,borderRadius:4,background:'var(--red)'}}/>
-                <span style={{fontWeight:800,fontSize:11,color:'var(--red)',letterSpacing:.6}}>EXPIRES TODAY — COOK FIRST</span>
-                <span className="pill pill-red">{urgent.length}</span>
-              </div>
-              {urgent.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)}
-            </>}
-            {expiring.length>0&&<>
-              <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
-                <div style={{width:8,height:8,borderRadius:4,background:'var(--gold)'}}/>
-                <span style={{fontWeight:800,fontSize:11,color:'var(--goldD)',letterSpacing:.6}}>EXPIRING IN 2–3 DAYS</span>
-                <span className="pill pill-amber">{expiring.length}</span>
-              </div>
-              {expiring.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)}
-            </>}
-            {fresh.length>0&&<>
-              <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
-                <div style={{width:8,height:8,borderRadius:4,background:'var(--sage)'}}/>
-                <span style={{fontWeight:800,fontSize:11,color:'#15803D',letterSpacing:.6}}>FRESH & STOCKED</span>
-                <span className="pill pill-green">{fresh.length}</span>
-              </div>
-              {fresh.map(i=><PantryRow key={i.id} item={i} onUsed={markUsed} onWasted={markWasted} onEditExpiry={setEditExpiry}/>)}
-            </>}
-            {pantry.length===0&&<div style={{textAlign:'center',paddingTop:60}}>
-              <div style={{fontSize:52}}>🎉</div>
-              <p style={{fontWeight:800,fontSize:20,color:'var(--inkM)',marginTop:14}}>Fridge is clear!</p>
+        {/* Items */}
+        <div style={{padding:'0 16px 32px'}}>
+          {pantry.length===0?(
+            <div style={{textAlign:'center',paddingTop:60}}>
+              <div style={{fontSize:44}}>🛒</div>
+              <p style={{fontFamily:'var(--serif)',fontWeight:500,fontSize:22,color:'var(--ink)',marginTop:14}}>Fridge is clear</p>
               <p style={{fontSize:13,color:'var(--gray)',marginTop:6}}>Tap Add to log your groceries.</p>
-            </div>}
-          </>
-        )}
+            </div>
+          ):fridgeFilter==='all'&&!search?(
+            <>
+              {(['urgent','soon','fresh'] as const).map(b=>{
+                const items = bucketed(b);
+                if(!items.length) return null;
+                const label = b==='urgent'?'Cook today':b==='soon'?'Use in a few days':'Still fresh';
+                const dot   = b==='urgent'?'#C94A3A':b==='soon'?'#C68A2E':'#4A6B3A';
+                return (
+                  <div key={b} style={{marginTop:14}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                      <span style={{width:8,height:8,borderRadius:8,background:dot,display:'inline-block'}}/>
+                      <span style={{fontFamily:'var(--mono)',fontSize:10.5,letterSpacing:1.2,color:'var(--gray)',textTransform:'uppercase'}}>{label} · {items.length}</span>
+                    </div>
+                    <div style={{display:'grid',gap:8}}>
+                      {items.map(i=><FridgeItem key={i.id} item={i} onClick={()=>setOpenItem(i)} currencySymbol={ccy}/>)}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          ):(
+            <div style={{display:'grid',gap:8,marginTop:14}}>
+              {filtered.map(i=><FridgeItem key={i.id} item={i} onClick={()=>setOpenItem(i)} currencySymbol={ccy}/>)}
+              {filtered.length===0&&<div style={{textAlign:'center',padding:36,color:'var(--gray)',fontSize:13}}>Nothing here.</div>}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  // Small stat card + chip helpers
+  function FridgeStat({label,value,tone='neutral'}:{label:string;value:string|number;tone?:'neutral'|'urgent'|'soon'}) {
+    const color = tone==='urgent'?'#C94A3A':tone==='soon'?'#C68A2E':'var(--ink)';
+    return (
+      <div style={{flex:1,padding:'10px',borderRadius:14,background:'var(--cream)',border:'1px solid var(--border)'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)'}}>{label}</div>
+        <div style={{fontFamily:'var(--serif)',fontSize:20,fontWeight:500,color,marginTop:2,letterSpacing:-.3,lineHeight:1}}>{value}</div>
+      </div>
+    );
+  }
+  function chipStyle(active:boolean, tone:'dark'|'urgent'|'neutral') {
+    const palettes = {
+      dark:    {bg:'var(--ink)', fg:'#fff',       bd:'var(--ink)'},
+      urgent:  {bg:'#FCE8E5',    fg:'#C94A3A',    bd:'#F4C8C1'},
+      neutral: {bg:'var(--surf)',fg:'var(--ink)', bd:'var(--border)'},
+    };
+    const p = palettes[tone];
+    return {
+      display:'inline-flex',alignItems:'center',gap:5,
+      background: active ? p.fg : p.bg,
+      color:      active ? p.bg : p.fg,
+      border:`1px solid ${p.bd}`, borderRadius:999,
+      padding:'6px 12px', fontSize:11.5, fontWeight:600,
+      fontFamily:'inherit', cursor:'pointer',
+      whiteSpace:'nowrap', lineHeight:1,
+    };
+  }
 
   // ════════════════════════════════════════════════
   // MEALS SCREEN
@@ -880,22 +919,19 @@ export default function App() {
           <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
             {cooking.ingredients_used?.map(i=><span key={i.name} style={{background:'var(--grayL)',borderRadius:20,padding:'4px 12px',fontSize:12,fontWeight:600,color:'var(--inkM)'}}>{i.name} {i.qty}</span>)}
           </div>
-          {/* Progress dots */}
-          <div style={{display:'flex',justifyContent:'center',gap:5,marginBottom:14}}>
-            {steps.map((_,i)=><div key={i} style={{height:6,borderRadius:3,background:i<=cookStep?'var(--navy)':'var(--border)',width:i===cookStep?22:6,transition:'all .2s'}}/>)}
+          {/* Recipe — all steps in one view */}
+          <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:8}}>RECIPE</div>
+          <div style={{background:'var(--cream)',borderRadius:14,padding:16,marginBottom:16}}>
+            <ol style={{margin:0,paddingLeft:20,fontFamily:'var(--serif)',fontSize:15,color:'var(--ink)',lineHeight:1.55,letterSpacing:-.1}}>
+              {steps.map((s,i)=>(
+                <li key={i} style={{marginBottom:i<steps.length-1?10:0}}>{s}</li>
+              ))}
+            </ol>
           </div>
-          {/* Current step */}
-          <div style={{background:'#FAF2EE',border:'1px solid #F4D8C8',borderRadius:14,padding:16,marginBottom:16}} key={cookStep}>
-            <div style={{fontSize:10,fontWeight:700,color:'var(--navyD)',letterSpacing:.5,marginBottom:8}}>STEP {cookStep+1} OF {steps.length}</div>
-            <div style={{fontSize:15,color:'var(--ink)',lineHeight:1.6}}>{steps[cookStep]}</div>
-          </div>
-          {/* Navigation */}
-          <div style={{display:'flex',gap:10}}>
-            {cookStep>0&&<button onClick={()=>setCookStep(s=>s-1)} style={{flex:1,border:'1px solid var(--border)',borderRadius:12,padding:12,fontWeight:700,fontSize:14,cursor:'pointer',background:'var(--white)',color:'var(--navy)',fontFamily:'inherit'}}>← Back</button>}
-            <button onClick={()=>cookStep<steps.length-1?setCookStep(s=>s+1):doneCooking()} style={{flex:2,background:cookStep<steps.length-1?'var(--navy)':cfg.color,border:'none',borderRadius:12,padding:12,fontWeight:800,fontSize:14,color:'#fff',cursor:'pointer',fontFamily:'inherit'}}>
-              {cookStep<steps.length-1?'Next →':'✓ Done — update fridge'}
-            </button>
-          </div>
+          <button onClick={doneCooking} style={{width:'100%',background:'#4A6B3A',color:'#fff',border:'none',borderRadius:14,padding:'14px',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+            ✓ I cooked this — update my fridge
+          </button>
+          <div style={{marginTop:8,fontSize:11.5,color:'var(--gray)',textAlign:'center'}}>Ingredients will be marked as used. Hidden from suggestions for 7 days.</div>
         </div>
       </div>
     );
@@ -905,6 +941,8 @@ export default function App() {
   // SHOP SCREEN
   // ════════════════════════════════════════════════
   const [newShopItem, setNewShopItem] = useState('');
+  const [addMethodChoice, setAddMethodChoice] = useState<'photo'|'voice'|'ordersync'>('voice');
+  const [orderSyncInterest, setOrderSyncInterest] = useState(false);
   const toggleShop = (id:string) => {
     const updated = shopList.map(i => i.id===id ? {...i, checked:!i.checked} : i);
     setShopList(updated); save({shopList:updated});
@@ -931,47 +969,55 @@ export default function App() {
     const stores = STORES[profile.country];
     const country = COUNTRIES.find(c => c.id === profile.country)!;
     const suggestedNames = new Set(shopList.map(s => s.name.toLowerCase()));
-    // Auto-suggestions: expiring items (you'll want to restock) that aren't already listed
+    // Smart suggestions: items expiring soon (running low) + pick a featured one for the headline
     const suggestions = pantry
       .filter(i => daysLeft(i.expiry) <= 3 && !suggestedNames.has(i.name.toLowerCase()))
       .slice(0, 6);
+    const featured = suggestions[0];
     const toBuy = shopList.filter(i => !i.checked);
     const done  = shopList.filter(i =>  i.checked);
     const searchQueries = toBuy.map(i => i.name);
+    const ccy = CURRENCY[profile.country].symbol;
+    const estTotal = toBuy.length * 50; // rough placeholder
 
     return (
       <div className="screen" style={{background:'var(--cream)'}}>
-        <div style={{padding:'14px 16px 0'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <div>
-              <h1 style={{fontSize:26,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>Shop</h1>
-              <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{country.flag} {country.label} · {toBuy.length} to buy</p>
-            </div>
-            <span style={{fontSize:22}}>🛒</span>
+        {/* Hero */}
+        <div style={{padding:'18px 20px 16px',background:'var(--surf)',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)'}}>SHOPPING · THIS WEEK</div>
+          <h1 style={{fontFamily:'var(--serif)',fontSize:30,color:'var(--ink)',margin:'4px 0 0',letterSpacing:-.5,fontWeight:500,lineHeight:1.1}}>Restock list</h1>
+          <div style={{display:'flex',gap:8,marginTop:14}}>
+            <FridgeStat label="TO BUY"     value={toBuy.length}/>
+            <FridgeStat label="CHECKED"    value={done.length}/>
+            <FridgeStat label="EST. TOTAL" value={`~${ccy}${estTotal}`}/>
           </div>
         </div>
-        <div style={{padding:'12px 16px 24px'}}>
+
+        <div style={{padding:'14px 16px 24px'}}>
+          {/* Smart suggestions */}
+          <div style={{background:'var(--white)',border:'1px dashed var(--border)',borderRadius:14,padding:14,marginBottom:14}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)'}}>✨ SMART SUGGESTIONS</div>
+            <div style={{fontSize:13,color:'var(--ink)',marginTop:6,fontWeight:600}}>
+              {featured
+                ? `${featured.name} is running low — expires ${fmtDays(daysLeft(featured.expiry)).toLowerCase()}.`
+                : 'Everything looks stocked. Add items you need below.'}
+            </div>
+            {suggestions.length>0&&(
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
+                {suggestions.map(s=>(
+                  <button key={s.id} onClick={()=>addShop(s.name)} style={{background:'var(--ink)',color:'var(--surf)',border:'none',borderRadius:999,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ {s.name}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Add */}
           <div style={{display:'flex',gap:8,marginBottom:14}}>
             <input type="text" value={newShopItem} onChange={e=>setNewShopItem(e.target.value)}
               onKeyDown={e=>{if(e.key==='Enter')addShop(newShopItem);}}
-              placeholder="Add item (e.g. Milk)" style={{flex:1,background:'var(--white)',border:'1px solid var(--border)',borderRadius:12,padding:'11px 14px',fontSize:13}}/>
-            <button onClick={()=>addShop(newShopItem)} className="btn-primary" style={{width:'auto',padding:'0 18px'}}>Add</button>
+              placeholder="Add item…" style={{flex:1,background:'var(--surf)',border:'1px solid var(--border)',borderRadius:999,padding:'11px 16px',fontSize:13}}/>
+            <button onClick={()=>addShop(newShopItem)} style={{background:'var(--navy)',color:'#fff',border:'none',borderRadius:999,padding:'0 20px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Add</button>
           </div>
-
-          {/* Auto-suggestions */}
-          {suggestions.length>0 && (
-            <div className="card" style={{marginBottom:14,background:'#FFFBEB',borderColor:'#FDE68A'}}>
-              <p style={{fontWeight:800,fontSize:11,color:'#92400E',letterSpacing:.6,marginBottom:10}}>✨ EXPIRING SOON — RESTOCK</p>
-              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                {suggestions.map(s=>(
-                  <button key={s.id} onClick={()=>addShop(s.name)} style={{background:'var(--white)',border:'1.5px solid #FDE68A',borderRadius:999,padding:'6px 12px',fontSize:12,fontWeight:700,color:'#92400E',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}}>
-                    <span>{s.emoji}</span>+ {s.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* To-buy list */}
           {toBuy.length>0 && <>
@@ -1034,6 +1080,23 @@ export default function App() {
               Search links only. Your browser may block multi-tab popups — allow them if prompted.
             </p>
           </div>
+
+          {/* Share list — premium */}
+          <button
+            onClick={()=>{
+              if(!isPremium){ setShowPremium(true); return; }
+              const text = `My FreshNudge list:\n${toBuy.map(i=>`• ${i.name}`).join('\n')||'(empty)'}`;
+              const nav = navigator as Navigator & { share?: (d:{text:string;title:string})=>Promise<void> };
+              if(nav.share) nav.share({title:'Shopping list',text}).catch(()=>{});
+              else { navigator.clipboard?.writeText(text); showToast('Copied to clipboard'); }
+            }}
+            style={{marginTop:18,width:'100%',background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:14,display:'flex',alignItems:'center',gap:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+            <div style={{width:38,height:38,borderRadius:10,background:'#FFFBEB',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{isPremium?'📤':'👑'}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:800,color:'var(--ink)'}}>Share list with family{isPremium?'':' · Premium'}</div>
+              <div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>{isPremium?'Send to anyone — syncs live in v2.':'Unlock to share with your household.'}</div>
+            </div>
+          </button>
         </div>
       </div>
     );
@@ -1144,7 +1207,7 @@ export default function App() {
         </div>
         {/* Profile summary */}
         <div className="card" style={{marginBottom:14}}>
-          {[['👤','Name',profile.name||'—'],['📍','City',profile.city],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety ON`:''}`]].map(([ic,lb,val],i,arr)=>(
+          {[['👤','Name',profile.name||'—'],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety ON`:''}`]].map(([ic,lb,val],i,arr)=>(
             <div key={lb} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
               <div style={{width:34,height:34,borderRadius:10,background:'var(--grayL)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{ic}</div>
               <div style={{flex:1}}><div style={{fontSize:11,color:'var(--gray)'}}>{lb}</div><div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>{val}</div></div>
@@ -1203,23 +1266,144 @@ export default function App() {
   );
 
   // ════════════════════════════════════════════════
-  // EXPIRY EDIT MODAL
+  // ADD SHEET (Voice / Type / Scan) — scan = premium
   // ════════════════════════════════════════════════
-  const renderExpiryEdit = () => (
-    <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)setEditExpiry(null);}}>
-      <div className="modal-sheet" style={{borderRadius:'26px 26px 0 0'}}>
-        <div className="modal-handle"/>
-        <div style={{padding:'20px 22px 32px'}}>
-          <p style={{fontWeight:800,fontSize:18,color:'var(--ink)',marginBottom:4}}>Edit expiry — {editExpiry?.name}</p>
-          <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Current: expires in {editExpiry?.expDays} days. Enter new number of days from today.</p>
-          <input type="number" value={newExpiryDays} onChange={e=>setNewExpiryDays(e.target.value)}
-            placeholder="e.g. 5" style={{width:'100%',marginBottom:16,fontSize:22,fontWeight:700,textAlign:'center',borderRadius:14,padding:'14px',border:'2px solid var(--navy)'}}/>
-          <button className="btn-primary" onClick={applyExpiryEdit} style={{marginBottom:10}}>Save</button>
-          <button onClick={()=>setEditExpiry(null)} style={{width:'100%',background:'none',border:'none',color:'var(--gray)',fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+  const [addMode, setAddMode] = useState<'voice'|'type'|'scan'>('voice');
+  const [typedAdd, setTypedAdd] = useState('');
+  const renderAddSheet = () => {
+    const tabStyle = (on:boolean) => ({
+      flex:1, background: on?'var(--ink)':'var(--cream)',
+      color: on?'var(--surf)':'var(--ink)',
+      border:`1px solid ${on?'var(--ink)':'var(--border)'}`,
+      borderRadius:12, padding:'10px 8px', cursor:'pointer',
+      fontFamily:'inherit', fontSize:12.5, fontWeight:700,
+      display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+    });
+    const submitType = async () => {
+      if(!typedAdd.trim()) return;
+      await parseText(typedAdd);
+      setTypedAdd('');
+      setShowAdd(false);
+    };
+    return (
+      <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)setShowAdd(false);}}>
+        <div className="modal-sheet" style={{borderRadius:'22px 22px 0 0'}}>
+          <div className="modal-handle"/>
+          <div style={{padding:'10px 22px 0'}}>
+            <h2 style={{fontFamily:'var(--serif)',fontSize:22,fontWeight:500,color:'var(--ink)',letterSpacing:-.3,padding:'4px 0 14px'}}>Add to fridge</h2>
+            <div style={{display:'flex',gap:6,marginBottom:16}}>
+              <button style={tabStyle(addMode==='voice')} onClick={()=>setAddMode('voice')}>🎙 Voice</button>
+              <button style={tabStyle(addMode==='type')}  onClick={()=>setAddMode('type')}>✍️ Type</button>
+              <button style={tabStyle(addMode==='scan')}  onClick={()=>setAddMode('scan')}>📷 Scan</button>
+            </div>
+          </div>
+          <div className="modal-body" style={{padding:'0 22px 26px'}}>
+            {addMode==='voice'&&(
+              <button onClick={startVoice} style={{width:'100%',background:recording?'#FCE8E5':'var(--cream)',border:`1.5px solid ${recording?'#F4C8C1':'var(--border)'}`,borderRadius:14,padding:'26px 20px',display:'flex',flexDirection:'column',alignItems:'center',gap:12,cursor:'pointer',fontFamily:'inherit'}}>
+                <div style={{width:70,height:70,borderRadius:70,background:recording?'#C94A3A':'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" fill="#FFF"/><path d="M5 11a7 7 0 0014 0M12 18v4" stroke="#FFF" strokeWidth="2" strokeLinecap="round"/></svg>
+                </div>
+                <div style={{fontSize:14,fontWeight:700,color:recording?'#C94A3A':'var(--ink)'}}>{recording?'Listening…':'Tap to speak'}</div>
+                <div style={{fontSize:12,color:'var(--gray)',textAlign:'center'}}>Say: &ldquo;2 tomatoes, 1L milk, 250g paneer&rdquo;</div>
+              </button>
+            )}
+            {addMode==='type'&&(
+              <div>
+                <textarea value={typedAdd} onChange={e=>setTypedAdd(e.target.value)} placeholder="2 tomatoes, 1L milk, 500g paneer, bunch coriander" style={{width:'100%',minHeight:100,padding:14,borderRadius:14,border:'1.5px solid var(--border)',background:'var(--cream)',color:'var(--ink)',fontFamily:'inherit',fontSize:14,outline:'none',resize:'vertical'}}/>
+                <button onClick={submitType} style={{marginTop:10,background:'var(--navy)',color:'#fff',border:'none',borderRadius:14,padding:'12px 18px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',width:'100%'}}>Parse items</button>
+              </div>
+            )}
+            {addMode==='scan'&&(
+              isPremium?(
+                <div style={{background:'var(--cream)',border:'1.5px dashed var(--border)',borderRadius:14,padding:24,textAlign:'center'}}>
+                  <div style={{fontSize:42,marginBottom:10}}>📷</div>
+                  <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>Snap your groceries</div>
+                  <div style={{fontSize:12,color:'var(--gray)',marginTop:4}}>We&apos;ll recognise items &amp; quantities automatically.</div>
+                  <button onClick={()=>{parseText('2 tomato, 500g paneer, 1 bread, 6 eggs');setShowAdd(false);}} style={{marginTop:14,background:'var(--navy)',color:'#fff',border:'none',borderRadius:999,padding:'10px 18px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Take photo (demo)</button>
+                </div>
+              ):(
+                <div style={{background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #FDE68A',borderRadius:14,padding:20,textAlign:'center'}}>
+                  <div style={{fontSize:34,marginBottom:8}}>👑</div>
+                  <div style={{fontFamily:'var(--serif)',fontSize:20,fontWeight:500,color:'#92400E'}}>Scan is Premium</div>
+                  <div style={{fontSize:12,color:'#A57522',marginTop:4,lineHeight:1.5}}>Unlock photo scan + email sync + 7-day meal plans.</div>
+                  <button onClick={()=>{setShowAdd(false);setShowPremium(true);}} style={{marginTop:14,background:'#C68A2E',color:'#fff',border:'none',borderRadius:999,padding:'10px 18px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Upgrade — 7-day free trial</button>
+                </div>
+              )
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  // ════════════════════════════════════════════════
+  // ITEM DETAIL SHEET (Butter-style — ate / wasted / edit / delete)
+  // ════════════════════════════════════════════════
+  const [editExpiryMode, setEditExpiryMode] = useState(false);
+  const deleteItem = (id:string) => {
+    const updated = pantry.filter(i=>i.id!==id);
+    setPantry(updated); save({pantry:updated});
+    setOpenItem(null);
+    showToast('Removed from fridge');
+  };
+  const renderItemSheet = () => {
+    if(!openItem) return null;
+    const ct = catTint(openItem.cat);
+    const ccy = CURRENCY[profile.country].symbol;
+    const dl = daysLeft(openItem.expiry);
+    return (
+      <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget){setOpenItem(null);setEditExpiryMode(false);}}}>
+        <div className="modal-sheet" style={{borderRadius:'22px 22px 0 0'}}>
+          <div className="modal-handle"/>
+          <div style={{padding:'8px 22px 0',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <h2 style={{fontFamily:'var(--serif)',fontSize:24,fontWeight:500,color:'var(--ink)',letterSpacing:-.3}}>{openItem.name}</h2>
+            <button onClick={()=>deleteItem(openItem.id)} title="Delete" style={{background:'none',border:'none',cursor:'pointer',color:'var(--gray)',fontSize:22,lineHeight:1,padding:4}}>🗑</button>
+          </div>
+          <div className="modal-body" style={{padding:'10px 22px 26px'}}>
+            {/* Striped placeholder */}
+            <div style={{height:120,borderRadius:14,position:'relative',overflow:'hidden',background:`linear-gradient(135deg,${ct.fg} 0%,${ct.fg} 33%,${ct.bg} 33%,${ct.bg} 66%,#4A6B3A 66%,#4A6B3A 100%)`,marginBottom:14}}>
+              <div style={{position:'absolute',inset:0,background:'repeating-linear-gradient(45deg,rgba(255,255,255,0.06) 0 8px,rgba(0,0,0,0.05) 8px 16px)'}}/>
+              <div style={{position:'absolute',left:10,bottom:8,background:'rgba(0,0,0,0.55)',color:'#fff',fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.4,padding:'3px 7px',borderRadius:4,textTransform:'uppercase'}}>{openItem.name}</div>
+            </div>
+            {/* Stats */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16,paddingBottom:16,borderBottom:'1px solid var(--border)'}}>
+              <div>
+                <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)'}}>QUANTITY</div>
+                <div style={{fontFamily:'var(--serif)',fontSize:18,fontWeight:500,color:'var(--ink)',marginTop:2}}>{openItem.qty}{openItem.unit}</div>
+              </div>
+              <div>
+                <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)'}}>EXPIRES</div>
+                {editExpiryMode?(
+                  <input autoFocus type="number" value={newExpiryDays} onChange={e=>setNewExpiryDays(e.target.value)} onBlur={()=>{applyExpiryEdit();setEditExpiryMode(false);}} onKeyDown={e=>{if(e.key==='Enter'){applyExpiryEdit();setEditExpiryMode(false);}}} placeholder={String(openItem.expDays)} style={{fontFamily:'var(--serif)',fontSize:18,fontWeight:500,color:'var(--ink)',marginTop:2,width:'100%',border:'none',borderBottom:'1.5px solid var(--navy)',background:'transparent',outline:'none',padding:0}}/>
+                ):(
+                  <button onClick={()=>{setEditExpiry(openItem);setNewExpiryDays(String(openItem.expDays));setEditExpiryMode(true);}} style={{background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'var(--serif)',fontSize:18,fontWeight:500,color:'var(--ink)',marginTop:2,textAlign:'left'}}>{fmtDays(dl)}</button>
+                )}
+              </div>
+              <div>
+                <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)'}}>COST</div>
+                <div style={{fontFamily:'var(--serif)',fontSize:18,fontWeight:500,color:'var(--ink)',marginTop:2}}>{ccy}{openItem.price||0}</div>
+              </div>
+            </div>
+            {/* Actions */}
+            <div style={{marginTop:16}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:10}}>WHAT TO DO</div>
+              <div style={{display:'grid',gap:8}}>
+                <button onClick={()=>{markUsed(openItem.id);setOpenItem(null);showToast(`✓ Ate the ${openItem.name}`);}} style={{background:'#4A6B3A',color:'#fff',border:'none',borderRadius:14,padding:14,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>✓ Ate it</button>
+                <button onClick={()=>{markWasted(openItem.id);setOpenItem(null);showToast(`✗ Wasted ${openItem.name} — noted`);}} style={{background:'var(--surf)',color:'#C94A3A',border:'1.5px solid #C94A3A',borderRadius:14,padding:14,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>✗ Threw it / wasted</button>
+              </div>
+            </div>
+            {/* Added by */}
+            <div style={{marginTop:16,padding:14,background:'var(--cream)',borderRadius:14}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:6}}>ADDED BY</div>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>
+                {openItem.src==='🎙️'?'🎙 Voice':openItem.src==='📷'?'📷 Photo scan':'✍️ Manual'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ════════════════════════════════════════════════
   // RENDER
@@ -1265,7 +1449,8 @@ export default function App() {
 
       {/* Modals */}
       {showPremium&&renderPremium()}
-      {editExpiry&&renderExpiryEdit()}
+      {showAdd&&renderAddSheet()}
+      {openItem&&renderItemSheet()}
 
       {/* Toast */}
       {toast&&<div style={{position:'absolute',bottom:100,left:'50%',transform:'translateX(-50%)',background:'#111827',color:'#fff',padding:'10px 18px',borderRadius:24,fontSize:13,fontWeight:700,zIndex:200,whiteSpace:'nowrap',animation:'fadeIn .2s'}}>{toast}</div>}
