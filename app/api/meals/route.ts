@@ -2,7 +2,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  return new OpenAI({ apiKey });
+}
 
 const PERIOD_TIME: Record<string, string> = {
   breakfast: '7–9 AM breakfast',
@@ -47,7 +55,8 @@ const CUISINE_DISHES: Record<string, Record<string, string[]>> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { pantry, period, dietary, recentlyCooked } = await req.json();
+    const openai = getOpenAIClient();
+    const { pantry, period, dietary, recentlyCooked, mode } = await req.json();
     if (!pantry?.length) return NextResponse.json({ meals: [] });
 
     const today      = new Date().toISOString().split('T')[0];
@@ -57,24 +66,27 @@ export async function POST(req: NextRequest) {
     const exclusion = recentlyCooked?.length
       ? `Do NOT suggest: ${recentlyCooked.slice(0,10).join(', ')}. Avoid dishes that are essentially the same.`
       : '';
+    const rescueMode = mode === 'rescue';
 
+    const childMode = dietary?.childMode ?? (dietary?.hasToddler ? 'toddler' : 'none');
     const dietCtx = [
       dietary?.isVeg ? 'STRICT VEGETARIAN — no meat, no fish, no chicken' : 'omnivore (meat OK)',
       dietary?.eatsEggs ? 'eats eggs' : dietary?.isVeg ? 'no eggs' : '',
-      dietary?.hasToddler ? `toddler present (${dietary.toddlerName||'child'}) — ALL dishes must be toddler-safe: no whole spices, no choking hazards, mild heat, soft textures` : '',
+      childMode !== 'none' ? `${childMode} present (${dietary?.childName || dietary?.toddlerName || 'child'}) — ALL dishes must be child-safe: no whole spices, no choking hazards, mild heat, soft textures` : '',
       dietary?.allergies?.length ? `ALLERGIES (strict avoid): ${dietary.allergies.join(', ')}` : '',
     ].filter(Boolean).join(' | ');
 
-    const cuisines: string[] = dietary?.cuisines ?? [];
-    const primaryCuisine = cuisines[0] ?? 'Indian';
+    const selectedCuisines: string[] = (dietary?.cuisines ?? []).filter((c: string) => Boolean(CUISINE_DISHES[c]));
+    const preferredCuisines = selectedCuisines.length ? selectedCuisines : ['Indian'];
+    const primaryCuisine = preferredCuisines[0];
 
     // Get dish suggestions for this cuisine + period
-    const dishSuggestions = cuisines.flatMap(c =>
-      (CUISINE_DISHES[c]?.[period] ?? CUISINE_DISHES.Indian[period] ?? [])
+    const dishSuggestions = preferredCuisines.flatMap(c =>
+      CUISINE_DISHES[c]?.[period] ?? []
     ).slice(0, 20);
 
-    const cuisineGuide = cuisines.length
-      ? `Primary cuisine: ${cuisines.join(' + ')}. Preferred dishes for ${period}: ${dishSuggestions.join(', ')}.`
+    const cuisineGuide = selectedCuisines.length
+      ? `User explicitly selected these cuisines: ${preferredCuisines.join(' + ')}. Stay inside these cuisines only. Preferred dishes for ${period}: ${dishSuggestions.join(', ')}. Do not switch to Indian or any other cuisine unless it is in the user's selected list.`
       : `Default to everyday Indian home cooking for ${period}.`;
 
     const prompt = `Generate exactly 3 ${PERIOD_TIME[period]} meal suggestions.
@@ -83,12 +95,20 @@ CUISINE & AUTHENTICITY:
 ${cuisineGuide}
 Pick dishes FROM that list above that can be made with the available ingredients. If a dish needs one missing ingredient, substitute creatively (e.g. no coriander → skip garnish). Do NOT invent fusion nonsense. Real home-cooked food only.
 
+LOCATION FIT:
+User city: ${dietary?.city ?? 'unknown'}.
+Use location only to keep substitutions and pantry assumptions realistic. Do not override the selected cuisine because of city.
+
 CRITICAL RULES:
 1. Use ONLY ingredients from the fridge list. ALWAYS assume available: water, salt, pepper, oil, basic spices (cumin, turmeric, chilli powder, garam masala, mustard seeds, bay leaf), onion, garlic, ginger, sugar, atta/flour if Indian cuisine.
 2. NEVER suggest a dish that makes no culinary sense (milk soup, banana curry, etc).
 3. Prioritise expiring items — use them first if a real dish fits.
 4. Nutrition must be accurate for the actual dish (not generic estimates).
 5. Steps must be practical — what a real home cook does.
+6. Anti-repetition is strict: avoid repeating the same main ingredient, sauce base, cuisine pattern, or flavor profile from the recent history. If they recently had curry, do not return another curry under a different name.
+7. Return one comfort option, one lighter option, and one higher-protein option when possible.
+8. ${rescueMode ? 'Rescue mode is ON: the first recipe must be the easiest possible rescue meal. It must be under 15 minutes, low cleanup, low decision-making, and realistic for a tired parent.' : 'At least one recipe should feel quick and low effort.'}
+9. Every recipe must include a "Low-Spice/Kid-Friendly" note inside notes when child mode is on.
 
 Diet: ${dietCtx}
 Family: ${dietary?.familySize ?? 2} people
@@ -96,6 +116,7 @@ ${exclusion}
 
 EXPIRING (use first): ${expiring.length ? expiring.map((i:{name:string;qty:number;unit:string})=>`${i.name}(${i.qty}${i.unit})`).join(', ') : 'none'}
 FRIDGE: ${freshItems.map((i:{name:string;qty:number;unit:string;expiry:string})=>`${i.name}(${i.qty}${i.unit},exp:${i.expiry})`).join(', ')}
+MEAL HISTORY LAST 3 DAYS: ${recentlyCooked?.length ? recentlyCooked.join('; ') : 'none'}
 
 Return JSON with key "meals" — array of exactly 3:
 {
@@ -121,7 +142,7 @@ Return JSON with key "meals" — array of exactly 3:
       max_tokens: 2500,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: `You are a home cooking assistant expert in ${primaryCuisine} cuisine. You only suggest dishes real families actually cook at home. Return valid JSON only.` },
+        { role: 'system', content: `You are a home cooking assistant expert in ${preferredCuisines.join(', ')} cuisine. You only suggest dishes real families actually cook at home. If the user selected cuisines, stay strictly within them. Return valid JSON only.` },
         { role: 'user', content: prompt },
       ],
     });
