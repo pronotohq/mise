@@ -5,7 +5,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  return new OpenAI({ apiKey });
+}
 
 // Grocery delivery sender domains — covers all supported regions
 const GROCERY_SENDERS = [
@@ -74,6 +82,7 @@ async function parseEmailItems(
   dietary: Record<string, unknown>
 ): Promise<{ item_name: string; quantity: number; unit: string; price: number; category: string; emoji: string }[]> {
   if (!body.trim() || body.length < 50) return [];
+  const openai = getOpenAIClient();
 
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o-mini',

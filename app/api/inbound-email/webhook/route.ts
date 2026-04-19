@@ -189,8 +189,6 @@ function deriveToken(userId: string): string {
   return crypto.createHmac('sha256', SYNC_SECRET).update(userId).digest('base64url').slice(0, 12);
 }
 
-const MAX_SYNC_LOG_ENTRIES = 10;
-
 // KV keys
 const kvPending  = (uid: string) => `fn:pending:${uid}`;
 const kvSyncLog  = (uid: string) => `fn:synclog:${uid}`;
