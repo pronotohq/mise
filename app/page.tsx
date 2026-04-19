@@ -10,7 +10,7 @@ interface PantryItem {
 interface FamilyMember { id: number; name: string; role: string; age: number; avatar: string; }
 interface Meal {
   id: string; name: string; emoji: string; time_minutes: number;
-  servings: number; calories: number; protein: number; carbs: number; fat: number;
+  servings: number; calories: number; protein: number; carbs: number; fat: number; fibre: number;
   kid_safe: boolean; uses_expiring: boolean;
   ingredients_used: {name: string; qty: string}[];
   steps: string[]; notes: string;
@@ -153,29 +153,101 @@ function getHistoricalDefault(name: string, history: PurchaseRecord[]): {qty:num
   return Object.values(freq).sort((a,b)=>b.count-a.count)[0];
 }
 
-// ── Estimated retail price by item name (SGD scale, multiplied by region) ──
-const PRICE_ESTIMATES: Record<string,number> = {
-  // Produce
-  strawberry:3, banana:1.5, apple:2, mango:3, grape:4, tomato:1.5, spinach:2,
-  lettuce:2, cucumber:1.5, carrot:1.5, onion:1, potato:1.5, garlic:1,
-  broccoli:2, capsicum:2, avocado:3, lemon:1, lime:1, ginger:1,
-  // Dairy
-  milk:3, yogurt:2.5, cheese:5, butter:4, egg:3, paneer:4, cream:4, ghee:8,
-  // Protein
-  chicken:6, fish:7, prawn:8, mutton:8, tofu:2,
-  // Grains
-  bread:3, rice:5, oats:4, pasta:3, flour:3,
-  // Pantry
-  sugar:3, salt:1.5, oil:4, sauce:3, jam:4, honey:6,
-  // Beverages
-  juice:3, coffee:6, tea:3,
+// ── Real market prices by region (avg unit price in local currency) ──────────
+const MARKET_PRICES: Record<string, Record<string,number>> = {
+  SG: { tomato:1.5,  milk:4.5,  egg:0.5,  chicken:10,  fish:12, prawn:15, mutton:18,
+        banana:0.5,  apple:2,   mango:3,  grape:5,  strawberry:5, spinach:1.5, lettuce:2,
+        broccoli:2.5,capsicum:2, cucumber:1.5, carrot:1.5, onion:0.8,  potato:1.5, garlic:0.5,
+        ginger:0.5,  avocado:3, lemon:0.8, paneer:5,  tofu:2,   yogurt:3,  cheese:6,
+        butter:4,    cream:4,   ghee:8,   bread:3.5, rice:8,   oats:4,   pasta:3,
+        flour:3,     sugar:3,   oil:4,    sauce:3,   jam:5,    honey:8,  juice:3,  coffee:6, tea:3 },
+  IN: { tomato:40,   milk:60,   egg:8,    chicken:200, fish:250,prawn:300,mutton:350,
+        banana:5,    apple:30,  mango:40, grape:80, strawberry:80, spinach:30, lettuce:40,
+        broccoli:80, capsicum:60,cucumber:30,carrot:30, onion:25,   potato:25,  garlic:20,
+        ginger:20,   avocado:80,lemon:5,  paneer:90, tofu:60,  yogurt:50, cheese:150,
+        butter:60,   cream:50,  ghee:600, bread:40,  rice:80,  oats:120, pasta:80,
+        flour:50,    sugar:45,  oil:150,  sauce:80,  jam:100,  honey:200,juice:60, coffee:200, tea:60 },
+  US: { tomato:2,    milk:4,    egg:0.3,  chicken:8,   fish:12, prawn:18, mutton:15,
+        banana:0.3,  apple:1.5, mango:2,  grape:3,  strawberry:4, spinach:3.5, lettuce:2.5,
+        broccoli:2.5,capsicum:2,cucumber:1.5,carrot:1.5,onion:1,    potato:2,   garlic:0.5,
+        ginger:1,    avocado:2, lemon:0.5,paneer:5,  tofu:2.5, yogurt:5,  cheese:6,
+        butter:5,    cream:4,   ghee:10,  bread:4,   rice:5,   oats:5,   pasta:3,
+        flour:3,     sugar:4,   oil:8,    sauce:4,   jam:4,    honey:8,  juice:4,  coffee:8, tea:4 },
+  GB: { tomato:1.5,  milk:1.2,  egg:0.3,  chicken:7,   fish:10, prawn:12, mutton:12,
+        banana:0.2,  apple:1.2, mango:2,  grape:3,  strawberry:3, spinach:1.5, lettuce:1.2,
+        broccoli:0.8,capsicum:1.5,cucumber:0.6,carrot:0.5,onion:0.5, potato:1,   garlic:0.4,
+        ginger:0.5,  avocado:1.5,lemon:0.4,paneer:3, tofu:2,   yogurt:1.5,cheese:4,
+        butter:2,    cream:2,   ghee:5,   bread:1.5, rice:2,   oats:2,   pasta:1.5,
+        flour:1.5,   sugar:1.5, oil:4,    sauce:2,   jam:2,    honey:4,  juice:2,  coffee:4, tea:2 },
+  AU: { tomato:3,    milk:2,    egg:0.6,  chicken:12,  fish:20, prawn:25, mutton:20,
+        banana:0.5,  apple:2,   mango:4,  grape:5,  strawberry:5, spinach:3,   lettuce:3,
+        broccoli:3,  capsicum:3,cucumber:2, carrot:1.5,onion:1,    potato:2,   garlic:0.8,
+        ginger:1,    avocado:2, lemon:0.8,paneer:6,  tofu:3,   yogurt:3,  cheese:8,
+        butter:5,    cream:5,   ghee:10,  bread:4,   rice:4,   oats:5,   pasta:3,
+        flour:3,     sugar:2,   oil:8,    sauce:4,   jam:5,    honey:8,  juice:4,  coffee:8, tea:4 },
+  AE: { tomato:5,    milk:7,    egg:1.5,  chicken:35,  fish:45, prawn:60, mutton:50,
+        banana:1,    apple:5,   mango:8,  grape:12, strawberry:12, spinach:5,   lettuce:6,
+        broccoli:8,  capsicum:7,cucumber:4, carrot:4,  onion:3,    potato:5,   garlic:3,
+        ginger:5,    avocado:8, lemon:2,  paneer:15, tofu:8,   yogurt:8,  cheese:25,
+        butter:20,   cream:15,  ghee:40,  bread:5,   rice:15,  oats:20,  pasta:10,
+        flour:8,     sugar:8,   oil:20,   sauce:15,  jam:15,   honey:30, juice:10, coffee:20, tea:10 },
+  MY: { tomato:3,    milk:6,    egg:0.5,  chicken:12,  fish:18, prawn:25, mutton:30,
+        banana:0.5,  apple:3,   mango:5,  grape:10, strawberry:10, spinach:3,   lettuce:3,
+        broccoli:5,  capsicum:4,cucumber:2, carrot:3,  onion:2,    potato:3,   garlic:2,
+        ginger:2,    avocado:5, lemon:1,  paneer:8,  tofu:3,   yogurt:5,  cheese:10,
+        butter:8,    cream:8,   ghee:20,  bread:4,   rice:8,   oats:10,  pasta:5,
+        flour:4,     sugar:4,   oil:10,   sauce:6,   jam:8,    honey:15, juice:5,  coffee:10, tea:5 },
 };
-function estimatePrice(name: string, priceMultiplier: number): number {
+function getMarketPrice(name: string, regionCode: string, priceMultiplier: number): number {
   const lc = name.toLowerCase();
-  const keys = Object.keys(PRICE_ESTIMATES).sort((a,b)=>b.length-a.length);
+  const prices = MARKET_PRICES[regionCode] ?? MARKET_PRICES.SG;
+  const keys = Object.keys(prices).sort((a,b)=>b.length-a.length);
   const match = keys.find(k => lc.includes(k));
-  const sgdPrice = match ? PRICE_ESTIMATES[match] : 2; // default $2 SGD
-  return Math.round(sgdPrice / priceMultiplier * 100) / 100; // scale to local currency
+  if (match) return prices[match];
+  // Fallback: SGD estimate scaled to region
+  const sgdFallback: Record<string,number> = { produce:1.5, dairy:3, protein:8, grains:3, other:2 };
+  return Math.round(sgdFallback.other / priceMultiplier * 100) / 100;
+}
+// Keep estimatePrice as alias for backwards compat
+function estimatePrice(name: string, priceMultiplier: number, regionCode?: string): number {
+  return getMarketPrice(name, regionCode ?? 'SG', priceMultiplier);
+}
+
+// ── Regional buy links ────────────────────────────────────────────────────────
+function getBuyLinks(regionCode: string): {app:string; url:(q:string)=>string; emoji:string; color:string}[] {
+  const enc = (q:string) => encodeURIComponent(q);
+  const links: Record<string, {app:string; url:(q:string)=>string; emoji:string; color:string}[]> = {
+    SG: [
+      { app:'FoodPanda', url:(q)=>`https://www.foodpanda.sg/groceries/search?q=${enc(q)}`, emoji:'🐼', color:'#E91E8C' },
+      { app:'GrabMart',  url:(q)=>`https://mart.grab.com/sg/search?query=${enc(q)}`,       emoji:'🟢', color:'#00B14F' },
+    ],
+    IN: [
+      { app:'Blinkit',   url:(q)=>`https://blinkit.com/s/?q=${enc(q)}`,                    emoji:'🟡', color:'#F8C200' },
+      { app:'Swiggy',    url:(q)=>`https://www.swiggy.com/instamart/search?query=${enc(q)}`,emoji:'🟠', color:'#FC8019' },
+      { app:'Zepto',     url:(q)=>`https://www.zeptonow.com/search?query=${enc(q)}`,        emoji:'🟣', color:'#7B2FBE' },
+    ],
+    US: [
+      { app:'Instacart', url:(q)=>`https://www.instacart.com/products/search?q=${enc(q)}`,  emoji:'🛒', color:'#43B02A' },
+      { app:'Amazon',    url:(q)=>`https://www.amazon.com/s?k=${enc(q)}+grocery`,            emoji:'📦', color:'#FF9900' },
+    ],
+    GB: [
+      { app:'Ocado',     url:(q)=>`https://www.ocado.com/search?entry=${enc(q)}`,            emoji:'🟣', color:'#5C2D91' },
+      { app:'Tesco',     url:(q)=>`https://www.tesco.com/groceries/en-GB/search?query=${enc(q)}`, emoji:'🔵', color:'#00539F' },
+    ],
+    AU: [
+      { app:'Woolworths',url:(q)=>`https://www.woolworths.com.au/shop/search/products?searchTerm=${enc(q)}`, emoji:'🟢', color:'#00833E' },
+      { app:'Coles',     url:(q)=>`https://www.coles.com.au/search?q=${enc(q)}`,             emoji:'🔴', color:'#E2231A' },
+    ],
+    AE: [
+      { app:'Noon',      url:(q)=>`https://www.noon.com/uae-en/search/?q=${enc(q)}`,         emoji:'🟡', color:'#FEEE00' },
+      { app:'Talabat',   url:(q)=>`https://www.talabat.com/uae/groceries`,                   emoji:'🟠', color:'#FF6B00' },
+    ],
+    MY: [
+      { app:'FoodPanda', url:(q)=>`https://www.foodpanda.my/groceries/search?q=${enc(q)}`,   emoji:'🐼', color:'#E91E8C' },
+      { app:'GrabMart',  url:(q)=>`https://mart.grab.com/my/search?query=${enc(q)}`,          emoji:'🟢', color:'#00B14F' },
+    ],
+  };
+  return links[regionCode] ?? links.SG;
 }
 
 // ── Qty adjustment step per unit ─────────────────────────────────
@@ -288,7 +360,13 @@ export default function App() {
   const [voiceToast, setVoiceToast] = useState<{items:PantryItem[];activeIdx:number}|null>(null);
   const voiceToastTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
   const [region,    setRegion]    = useState<Region>(DEFAULT_REGION);
-  useEffect(()=>{ setRegion(detectRegion()); },[]);
+  const [regionCode, setRegionCode] = useState<string>('IN');
+  useEffect(()=>{
+    const r = detectRegion();
+    setRegion(r);
+    const cc = (typeof navigator!=='undefined' ? navigator.language||'en-IN' : 'en-IN').split('-')[1]?.toUpperCase()||'IN';
+    setRegionCode(Object.keys(REGIONS).includes(cc) ? cc : 'IN');
+  },[]);
   const fmt = (n:number) => `${region.symbol}${n.toLocaleString(undefined,{maximumFractionDigits:0})}`;
 
   // ── UI state ────────────────────────────────────────────────────
@@ -950,7 +1028,7 @@ export default function App() {
   const markWasted=(id:string)=>{
     const item = pantry.find(i=>i.id===id);
     const updatedPantry = pantry.filter(i=>i.id!==id);
-    const updatedWaste = item ? [...wasteLog,{id:uid(),name:item.name,emoji:item.emoji,price:item.price||estimatePrice(item.name, region.priceMultiplier),date:new Date().toISOString()}] : wasteLog;
+    const updatedWaste = item ? [...wasteLog,{id:uid(),name:item.name,emoji:item.emoji,price:item.price||getMarketPrice(item.name, regionCode, region.priceMultiplier),date:new Date().toISOString()}] : wasteLog;
     setPantry(updatedPantry); setWasteLog(updatedWaste);
     save({pantry:updatedPantry,wasteLog:updatedWaste});
   };
@@ -1018,6 +1096,17 @@ export default function App() {
       const def = getCategoryDefault(item.name);
       return def.qty > 0 && (item.qty / def.qty) < 0.25;
     }).slice(0, 2);
+  })();
+
+  // ── Module 5b: Refill Nudges — items expiring soon, time to restock ─
+  const refillNudges = (() => {
+    // Perishables expiring within 2 days — suggest buying again
+    const COMMONLY_REFILLED = ['milk','eggs','egg','bread','curd','dahi','yogurt','spinach','tomato','tomatoes','banana','onion','potato','chicken','paneer','fish','vegetables','fruits'];
+    return sortedPantry.filter(item => {
+      const d = daysLeft(item.expiry);
+      const lc = item.name.toLowerCase();
+      return d >= 0 && d <= 2 && COMMONLY_REFILLED.some(k => lc.includes(k));
+    }).slice(0, 3);
   })();
 
   // ── Recipe cooldown (4-day) filter ─────────────────────────────
@@ -1463,6 +1552,38 @@ export default function App() {
           );
         })}
 
+        {/* ── Refill Nudges ── */}
+        {refillNudges.length>0&&(
+          <div style={{background:'linear-gradient(135deg,#F0FDF4,#DCFCE7)',border:'1.5px solid #86EFAC',borderRadius:16,padding:'12px 14px',marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+              <span style={{fontSize:18}}>🛒</span>
+              <div style={{flex:1}}>
+                <p style={{fontSize:12,fontWeight:800,color:'#15803D'}}>Time to restock</p>
+                <p style={{fontSize:11,color:'#16A34A'}}>{refillNudges.map(i=>i.name).join(', ')} {refillNudges.length===1?'is':'are'} almost gone</p>
+              </div>
+            </div>
+            {/* Items */}
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+              {refillNudges.map(item=>(
+                <div key={item.id} style={{display:'flex',alignItems:'center',gap:5,background:'#fff',borderRadius:20,padding:'4px 10px',border:'1px solid #86EFAC'}}>
+                  <span style={{fontSize:14}}>{item.emoji}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:'#15803D'}}>{item.name}</span>
+                  <span style={{fontSize:10,color:'#16A34A'}}>{fmtDays(daysLeft(item.expiry))}</span>
+                </div>
+              ))}
+            </div>
+            {/* Buy buttons */}
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {getBuyLinks(regionCode).map(lnk=>(
+                <a key={lnk.app} href={lnk.url(refillNudges[0].name)} target="_blank" rel="noreferrer"
+                  style={{display:'flex',alignItems:'center',gap:5,background:lnk.color,color:'#fff',borderRadius:10,padding:'7px 12px',fontSize:11,fontWeight:700,textDecoration:'none',whiteSpace:'nowrap'}}>
+                  {lnk.emoji} {lnk.app}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {searched ? (
           searched.length===0
             ? <p style={{textAlign:'center',padding:'40px',color:'var(--gray)'}}>&ldquo;{search}&rdquo; not in fridge</p>
@@ -1694,10 +1815,13 @@ export default function App() {
                 <span style={{fontSize:42,lineHeight:1.1}}>{m.emoji}</span>
                 <div style={{flex:1,paddingRight:m.uses_expiring?50:0}}>
                   <div style={{fontWeight:800,fontSize:15,color:'var(--ink)',letterSpacing:-.3,lineHeight:1.3}}>{m.name}</div>
-                  <div style={{display:'flex',gap:10,marginTop:5,flexWrap:'wrap'}}>
+                  <div style={{display:'flex',gap:6,marginTop:5,flexWrap:'wrap'}}>
                     <span style={{fontSize:11,color:'var(--gray)'}}>⏱ {m.time_minutes} min</span>
-                    <span style={{fontSize:11,color:'var(--gray)'}}>🔥 {m.calories} kcal</span>
-                    <span style={{fontSize:11,color:'var(--navy)'}}>💪 {m.protein}g P</span>
+                    <span style={{fontSize:11,color:'#EF4444'}}>🔥 {m.calories} kcal</span>
+                    <span style={{fontSize:11,color:'#1E3A8A'}}>💪 {m.protein}g</span>
+                    {m.carbs>0&&<span style={{fontSize:11,color:'#D97706'}}>🌾 {m.carbs}g</span>}
+                    {m.fat>0&&<span style={{fontSize:11,color:'#7C3AED'}}>🥑 {m.fat}g</span>}
+                    {m.fibre>0&&<span style={{fontSize:11,color:'#15803D'}}>🌿 {m.fibre}g F</span>}
                     {m.kid_safe&&<span style={{fontSize:11,color:'#15803D'}}>👶 {profile.toddlerName||'Kid'}-safe</span>}
                   </div>
                 </div>
@@ -1765,11 +1889,11 @@ export default function App() {
             <div style={{fontSize:13,color:'#92400E',fontWeight:600}}>Uses items expiring today — great choice!</div>
           </div>}
           {/* Macros */}
-          <div style={{display:'flex',gap:8,marginBottom:16}}>
-            {[['🔥',cooking.calories,'kcal','var(--red)'],['💪',cooking.protein,'g P','var(--navy)'],['⏱',cooking.time_minutes,'min','#22C55E']].map(([ic,v,u,c])=>(
-              <div key={u} style={{flex:1,background:'var(--white)',borderRadius:12,padding:'10px 8px',textAlign:'center',border:'1px solid var(--border)'}}>
+          <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
+            {([['🔥',cooking.calories,'kcal','#EF4444'],['💪',cooking.protein,'g P','#1E3A8A'],['🌾',cooking.carbs,'g C','#D97706'],['🥑',cooking.fat,'g F','#7C3AED'],['🌿',cooking.fibre,'g Fb','#15803D'],['⏱',cooking.time_minutes,'min','#22C55E']] as [string,number,string,string][]).map(([ic,v,u,c])=>(
+              <div key={u} style={{flex:'1 1 60px',background:'var(--white)',borderRadius:12,padding:'8px 6px',textAlign:'center',border:'1px solid var(--border)'}}>
                 <div style={{fontSize:11,color:'var(--gray)'}}>{ic}</div>
-                <div style={{fontSize:14,fontWeight:800,color:c as string,marginTop:2}}>{v} {u}</div>
+                <div style={{fontSize:13,fontWeight:800,color:c,marginTop:2}}>{v}<span style={{fontSize:10,fontWeight:600}}> {u}</span></div>
               </div>
             ))}
           </div>
@@ -1848,7 +1972,7 @@ export default function App() {
     const maxItemWaste = region.avgTakeout;
     // Use actual price if set; fall back to category estimate so wastage is never 0
     const wasteCost = wasteThisMonth.reduce((a,w)=>{
-      const price = (w.price && w.price > 0) ? w.price : estimatePrice(w.name, region.priceMultiplier);
+      const price = (w.price && w.price > 0) ? w.price : getMarketPrice(w.name, regionCode, region.priceMultiplier);
       return a + Math.min(price, maxItemWaste);
     }, 0);
 
@@ -2004,24 +2128,20 @@ export default function App() {
         </div>
 
         {/* ── Order-to-Fridge Auto-Sync ── */}
-        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:18,marginBottom:14,overflow:'hidden'}}>
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:18,marginBottom:14,overflow:'hidden',opacity:.85}}>
           {/* Header */}
-          <div onClick={()=>{setShowSyncSetup(v=>!v); if(!syncEmail) getOrCreateSyncEmail(); else refreshSyncStatus();}}
-            style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer'}}>
-            <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,#0EA5E9,#0284C7)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔄</div>
+          <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px'}}>
+            <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,#94A3B8,#64748B)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔄</div>
             <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Order → Fridge Auto-Sync</div>
-              <div style={{fontSize:11,color:syncLog.length>0?'#15803D':'var(--gray)',marginTop:1,fontWeight:syncLog.length>0?700:400}}>
-                {syncLog.length>0
-                  ? `✓ Last synced ${new Date(syncLog[0].syncedAt).toLocaleDateString()} · ${syncLog[0].count} items from ${syncLog[0].store}`
-                  : syncEmail ? '⏳ Ready — waiting for your first order' : 'Order on FoodPanda, close the app. Done.'}
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Order → Fridge Auto-Sync</span>
+                <span style={{fontSize:10,fontWeight:800,background:'linear-gradient(135deg,#7C3AED,#5B21B6)',color:'#fff',borderRadius:8,padding:'2px 8px',letterSpacing:.4}}>🚀 Coming Soon</span>
               </div>
+              <div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>Auto-import items from FoodPanda, GrabMart & more</div>
             </div>
-            {syncLog.length>0 && <div style={{width:8,height:8,borderRadius:4,background:'#22C55E',flexShrink:0}}/>}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gray)" strokeWidth="2.5" strokeLinecap="round" style={{transform:showSyncSetup?'rotate(90deg)':'rotate(0deg)',transition:'transform .2s',flexShrink:0}}><polyline points="9 18 15 12 9 6"/></svg>
           </div>
 
-          {showSyncSetup&&(
+          {false&&(
             <div style={{borderTop:'1px solid var(--border)',padding:'16px'}}>
 
               {/* Hero explanation */}
