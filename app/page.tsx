@@ -76,6 +76,49 @@ function inferRegionCodeFromProfile(profile: Profile): string {
   return 'IN';
 }
 
+function inferCityFromTimeZone(timeZone: string): string {
+  const tz = timeZone || '';
+  const cityMap: Record<string, string> = {
+    'Asia/Singapore': 'Singapore',
+    'Europe/London': 'London',
+    'Asia/Dubai': 'Dubai',
+    'Asia/Kuala_Lumpur': 'Kuala Lumpur',
+    'America/Toronto': 'Toronto',
+    'America/Vancouver': 'Vancouver',
+    'America/New_York': 'New York',
+    'America/Los_Angeles': 'Los Angeles',
+    'America/Chicago': 'Austin',
+    'America/Denver': 'Seattle',
+    'Australia/Sydney': 'Sydney',
+    'Australia/Melbourne': 'Melbourne',
+    'Asia/Kolkata': 'Mumbai',
+    'Asia/Calcutta': 'Mumbai',
+  };
+  return cityMap[tz] ?? '';
+}
+
+function detectBrowserLocation(): {regionCode: string; city: string} {
+  if (typeof navigator === 'undefined' || typeof Intl === 'undefined') {
+    return { regionCode: 'IN', city: '' };
+  }
+  const locale = (navigator.language || 'en-IN').toUpperCase();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  const city = inferCityFromTimeZone(timeZone);
+
+  if (locale.includes('-US') || timeZone.startsWith('America/')) return { regionCode: 'US', city };
+  if (locale.includes('-SG') || timeZone === 'Asia/Singapore') return { regionCode: 'SG', city: city || 'Singapore' };
+  if (locale.includes('-GB') || timeZone.startsWith('Europe/London')) return { regionCode: 'GB', city: city || 'London' };
+  if (locale.includes('-AU') || timeZone.startsWith('Australia/')) return { regionCode: 'AU', city };
+  if (locale.includes('-AE') || timeZone === 'Asia/Dubai') return { regionCode: 'AE', city: city || 'Dubai' };
+  if (locale.includes('-MY') || timeZone === 'Asia/Kuala_Lumpur') return { regionCode: 'MY', city: city || 'Kuala Lumpur' };
+  if (locale.includes('-CA') || timeZone.startsWith('America/Toronto') || timeZone.startsWith('America/Vancouver')) return { regionCode: 'CA', city };
+  return { regionCode: 'IN', city };
+}
+
+function detectRegionCodeFromBrowser(): string {
+  return detectBrowserLocation().regionCode;
+}
+
 // ── Constants ──────────────────────────────────────────────────────
 const SHELF: Record<string, number> = {
   spinach:3,kale:4,methi:3,coriander:4,mint:5,lettuce:5,
@@ -242,6 +285,13 @@ function normalizeMarketName(name: string): string {
 }
 function convertToPriceBasis(qty: number, unit: string, basis: MarketPriceBasis): number {
   const normalizedUnit = unit.toLowerCase();
+  if (basis === 'pack') {
+    if (['pack', 'packet', 'box', 'loaf', 'bunch'].includes(normalizedUnit)) return qty;
+    if (normalizedUnit === 'pcs') return Math.max(qty, 1);
+    // For weighted/liquid units sold as a pack in our price guide, treat it as one retail pack.
+    if (['g', 'kg', 'ml', 'l'].includes(normalizedUnit)) return 1;
+    return Math.max(qty, 1);
+  }
   if (basis === 'item') {
     if (normalizedUnit === 'pcs') return qty;
     if (normalizedUnit === 'bunch' || normalizedUnit === 'packet' || normalizedUnit === 'pack' || normalizedUnit === 'box' || normalizedUnit === 'loaf') return qty;
@@ -524,10 +574,21 @@ export default function App() {
   const voiceToastTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
   const [region,    setRegion]    = useState<Region>(DEFAULT_REGION);
   const [regionCode, setRegionCode] = useState<string>('IN');
+  const [storePromptRegionCode, setStorePromptRegionCode] = useState<string>('IN');
   useEffect(()=>{
-    const nextRegionCode = inferRegionCodeFromProfile(profile);
+    const profileRegionCode = inferRegionCodeFromProfile(profile);
+    const browserLocation = detectBrowserLocation();
+    const nextRegionCode = profile.city?.trim() ? profileRegionCode : browserLocation.regionCode;
     setRegionCode(nextRegionCode);
     setRegion(REGIONS[nextRegionCode] ?? detectRegion());
+  },[profile.city]);
+  useEffect(()=>{
+    const profileRegionCode = inferRegionCodeFromProfile(profile);
+    if (profile.city?.trim()) {
+      setStorePromptRegionCode(profileRegionCode);
+      return;
+    }
+    setStorePromptRegionCode(detectBrowserLocation().regionCode);
   },[profile.city]);
   const fmt = (n:number) => `${region.symbol}${n.toLocaleString(undefined,{maximumFractionDigits:0})}`;
 
@@ -575,6 +636,7 @@ export default function App() {
   const [showPasteEmail, setShowPasteEmail] = useState(false);
   const [pasteEmailText, setPasteEmailText] = useState('');
   const [pasteEmailLoading, setPasteEmailLoading] = useState(false);
+  const [autoSyncInterest, setAutoSyncInterest] = useState(false);
   const [gmailFilterDone, setGmailFilterDone] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState(false);
@@ -610,6 +672,7 @@ export default function App() {
         if(d.syncEmail)  { setSyncEmail(d.syncEmail);  }
         if(d.syncUserId) { setSyncUserId(d.syncUserId); }
         if(d.syncLog)    { setSyncLog(d.syncLog); }
+        if(d.autoSyncInterest) setAutoSyncInterest(true);
         if(d.gmailFilterDone) setGmailFilterDone(true);
         if(d.cookedTimestamps) setCookedTimestamps(d.cookedTimestamps);
       }
@@ -617,12 +680,24 @@ export default function App() {
   },[]);
 
   // ── Save to localStorage ────────────────────────────────────────
-  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];wasteLog:ItemLog[];ateLog:ItemLog[];isPremium:boolean;purchaseHistory:PurchaseRecord[];syncEmail:string;syncUserId:string;syncLog:{store:string;count:number;syncedAt:string;items:string[]}[];cookedTimestamps:Record<string,string>}>)=>{
+  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];wasteLog:ItemLog[];ateLog:ItemLog[];isPremium:boolean;purchaseHistory:PurchaseRecord[];syncEmail:string;syncUserId:string;syncLog:{store:string;count:number;syncedAt:string;items:string[]}[];autoSyncInterest:boolean;cookedTimestamps:Record<string,string>}>)=>{
     try {
       const current = JSON.parse(localStorage.getItem('mise_v1')||'{}');
       localStorage.setItem('mise_v1', JSON.stringify({...current,...updates}));
     } catch{}
   },[]);
+
+  useEffect(()=>{
+    if (profile.city?.trim()) return;
+    const browserLocation = detectBrowserLocation();
+    if (!browserLocation.city) return;
+    setProfile(prev => {
+      if (prev.city?.trim()) return prev;
+      const next = { ...prev, city: browserLocation.city };
+      save({ profile: next });
+      return next;
+    });
+  },[profile.city, save]);
 
   // ── Toast ───────────────────────────────────────────────────────
   const showToast = (msg: string) => {
@@ -993,6 +1068,12 @@ export default function App() {
       save({ profile: next, family: nextFamily });
       return next;
     });
+  }, [save]);
+
+  const registerAutoSyncInterest = useCallback(() => {
+    setAutoSyncInterest(true);
+    save({ autoSyncInterest: true });
+    showToast('Added to the auto-sync waitlist');
   }, [save]);
 
   // ── Add items to pantry ─────────────────────────────────────────
@@ -1375,6 +1456,7 @@ export default function App() {
       const ts = cookedTimestamps[m.name.toLowerCase()];
       return !ts || new Date(ts) < fourDaysAgo;
     });
+  const storePromptApps = (REGIONS[storePromptRegionCode] ?? region).groceryApps.slice(0,2);
 
   // ── Daily Rescue at 4:30 PM ─────────────────────────────────────
   useEffect(() => {
@@ -1427,12 +1509,13 @@ export default function App() {
         </div>
 
         {step==='welcome'&&(
-          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(160deg,#0F172A,#1E3A5F)'}}>
-            <div style={{width:72,height:72,borderRadius:20,background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:36,marginBottom:20}}>🍽️</div>
-            <h1 style={{fontSize:32,fontWeight:900,color:'#fff',letterSpacing:-1,marginBottom:8}}>FreshNudge</h1>
-            <p style={{fontSize:14,color:'#93C5FD',textAlign:'center',lineHeight:1.6,marginBottom:40}}>Your kitchen, on autopilot.<br/>Never wonder what to cook again.</p>
+          <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(180deg,#FFFDF8 0%,#FFF7ED 100%)'}}>
+            <div style={{fontSize:32,marginBottom:18}}>🍽️</div>
+            <h1 style={{fontSize:34,fontWeight:900,color:'var(--ink)',letterSpacing:-1,marginBottom:12}}>FreshNudge</h1>
+            <p style={{fontSize:17,fontWeight:800,color:'var(--ink)',lineHeight:1.4,marginBottom:10}}>Your fridge just got smarter.</p>
+            <p style={{fontSize:14,color:'var(--gray)',lineHeight:1.7,marginBottom:34}}>Track what you buy and get instant recipes — so nothing goes to waste.</p>
             <button className="btn-primary" onClick={()=>setObStep(1)} style={{background:'#22C55E',fontSize:16,padding:16}}>Get started →</button>
-            <p style={{fontSize:11,color:'#475569',marginTop:20,textAlign:'center'}}>🔒 Works offline · Your data stays on your device</p>
+            <p style={{fontSize:11,color:'#94A3B8',marginTop:18}}>Works offline · Your data stays on your device</p>
           </div>
         )}
 
@@ -1609,11 +1692,19 @@ export default function App() {
               {addPath==='voice'&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,flexShrink:0}}>✓</div>}
             </div>
 
-            <div aria-disabled="true" style={{background:'#FFFBEB',border:'2px dashed #FCD34D',borderRadius:16,padding:'16px 14px',display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'default',opacity:.9}}>
+            <div aria-disabled="true" style={{background:'#FFFBEB',border:'2px dashed #FCD34D',borderRadius:16,padding:'16px 14px',display:'flex',alignItems:'flex-start',gap:14,marginBottom:10,cursor:'default',opacity:.95}}>
               <div style={{width:48,height:48,borderRadius:14,background:'#FEF3C7',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>🛒</div>
               <div style={{flex:1}}>
-                <div style={{fontSize:15,fontWeight:800,color:'#92400E'}}>Order sync</div>
-                <div style={{fontSize:12,color:'#B45309',marginTop:2}}>Coming soon. Keeping {region.groceryApps.slice(0,2).join(' + ')} fridge sync on hold for now.</div>
+                <div style={{fontSize:15,fontWeight:800,color:'#92400E'}}>Order → Fridge sync</div>
+                <div style={{fontSize:12,color:'#B45309',marginTop:2}}>Coming soon. We&apos;re deciding which store integrations to build first.</div>
+                <div style={{fontSize:11,color:'#B45309',marginTop:8}}>Would you want auto-sync for {storePromptApps.join(' + ')}?</div>
+                <button
+                  onClick={registerAutoSyncInterest}
+                  disabled={autoSyncInterest}
+                  style={{marginTop:8,background:autoSyncInterest?'#DCFCE7':'#fff',border:`1px solid ${autoSyncInterest?'#86EFAC':'#F59E0B'}`,borderRadius:999,padding:'7px 12px',fontSize:11,fontWeight:800,color:autoSyncInterest?'#15803D':'#B45309',cursor:autoSyncInterest?'default':'pointer',fontFamily:'inherit'}}
+                >
+                  {autoSyncInterest ? '✓ You asked for auto-sync' : 'Yes, count me in'}
+                </button>
               </div>
             </div>
 
@@ -1781,11 +1872,19 @@ export default function App() {
               </button>
             )}
 
-            <div aria-disabled="true" style={{width:'100%',background:'#FFFBEB',border:'1.5px dashed #FCD34D',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'default',opacity:.9}}>
+            <div aria-disabled="true" style={{width:'100%',background:'#FFFBEB',border:'1.5px dashed #FCD34D',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'flex-start',gap:14,cursor:'default',opacity:.95}}>
               <div style={{width:42,height:42,borderRadius:21,background:'#FEF3C7',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:20}}>🛒</div>
               <div style={{flex:1,textAlign:'left'}}>
                 <div style={{fontSize:14,fontWeight:800,color:'#92400E'}}>Order → Fridge sync</div>
-                <div style={{fontSize:11,color:'#B45309',marginTop:1}}>Coming soon. Keeping {region.groceryApps.slice(0,2).join(' + ')} sync on hold for now.</div>
+                <div style={{fontSize:11,color:'#B45309',marginTop:1}}>Coming soon. We&apos;re using this to learn which store syncs families want first.</div>
+                <div style={{fontSize:11,color:'#B45309',marginTop:7}}>Would auto-sync for {storePromptApps.join(' + ')} help?</div>
+                <button
+                  onClick={registerAutoSyncInterest}
+                  disabled={autoSyncInterest}
+                  style={{marginTop:8,background:autoSyncInterest?'#DCFCE7':'#fff',border:`1px solid ${autoSyncInterest?'#86EFAC':'#F59E0B'}`,borderRadius:999,padding:'7px 12px',fontSize:11,fontWeight:800,color:autoSyncInterest?'#15803D':'#B45309',cursor:autoSyncInterest?'default':'pointer',fontFamily:'inherit'}}
+                >
+                  {autoSyncInterest ? '✓ Interest noted' : 'Yes, I want this'}
+                </button>
               </div>
             </div>
           </div>
@@ -2066,39 +2165,50 @@ export default function App() {
     const cfg = PERIODS.find(p=>p.id===period)!;
     const currentMeals = meals[`${period}:${mealMode}`];
     const urgentNames  = pantry.filter(i=>daysLeft(i.expiry)<=1).map(i=>i.name);
+    const userName = profile.name || 'Your';
+    const childName = getChildLabel(profile) || 'little one';
     return (
       <div className="screen" style={{display:'flex',flexDirection:'column',background:'var(--cream)'}}>
-        <div style={{padding:'14px 16px 0',flexShrink:0}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+        <div style={{padding:'18px 20px 0',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,marginBottom:10}}>
             <div>
-              <h1 style={{fontSize:26,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>Meal Ideas</h1>
-              <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{mealMode === 'rescue' ? 'Lowest-effort picks for tonight' : 'From your fridge · auto-generated'}</p>
+              <h1 style={{fontSize:28,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>Meal Ideas</h1>
+              <p style={{fontSize:12,color:'var(--gray)',marginTop:4}}>{mealMode === 'rescue' ? `${userName}'s fastest dinner path tonight` : `${userName}, here&apos;s what your fridge can become tonight.`}</p>
             </div>
             <button onClick={()=>{setMeals(m=>({...m,[`${period}:${mealMode}`]:undefined as unknown as Meal[]}));generateMeals(period,true,mealMode);}}
-              style={{display:'flex',alignItems:'center',gap:5,background:cfg.bg,border:`1px solid ${cfg.brd}`,borderRadius:12,padding:'8px 12px',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:700,color:cfg.color}}>
+              style={{display:'flex',alignItems:'center',gap:5,background:'transparent',border:'none',padding:'8px 0',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:800,color:cfg.color}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{animation:loadingMeals?'spin 1s linear infinite':'none'}}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               Refresh
             </button>
           </div>
         </div>
 
-        <div style={{padding:'10px 14px 0',flexShrink:0}}>
-          <div style={{background:'linear-gradient(135deg,#0F172A,#1E3A8A)',borderRadius:20,padding:'16px 16px 14px',display:'flex',alignItems:'center',gap:14,boxShadow:'0 10px 28px rgba(15,23,42,.18)'}}>
-            <div style={{width:52,height:52,borderRadius:16,background:'rgba(255,255,255,.12)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,flexShrink:0}}>🛟</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:16,fontWeight:900,color:'#fff'}}>Rescue Me</div>
-              <div style={{fontSize:12,color:'#BFDBFE',marginTop:3}}>One tap for the quickest kid-aware meal that uses what needs saving first.</div>
+        <div style={{padding:'6px 20px 0',flexShrink:0}}>
+          <div style={{padding:'14px 0 16px',borderBottom:'1px solid rgba(148,163,184,.18)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+              <div style={{width:42,height:42,borderRadius:14,background:'#ECFDF5',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 21h8"/>
+                  <path d="M12 17v4"/>
+                  <path d="M7 8h10a4 4 0 0 1 0 8H7a4 4 0 0 1 0-8z"/>
+                  <path d="M9 8a3 3 0 1 1 6 0"/>
+                </svg>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:18,fontWeight:900,color:'var(--ink)'}}>{userName}&apos;s Quick Fix</div>
+                <div style={{fontSize:12,color:'var(--gray)',marginTop:3}}>Fast meal ideas that fit your fridge and stay {childName}-friendly.</div>
+              </div>
+              <button
+                onClick={()=>{ setMealMode('rescue'); generateMeals(period, true, 'rescue'); }}
+                style={{background:'#22C55E',border:'none',borderRadius:999,padding:'11px 16px',fontSize:12,fontWeight:900,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,whiteSpace:'nowrap'}}
+              >
+                Cook Now (15 Min)
+              </button>
             </div>
-            <button
-              onClick={()=>{ setMealMode('rescue'); generateMeals(period, true, 'rescue'); }}
-              style={{background:'#22C55E',border:'none',borderRadius:14,padding:'12px 14px',fontSize:12,fontWeight:900,color:'#fff',cursor:'pointer',fontFamily:'inherit',flexShrink:0,whiteSpace:'nowrap'}}
-            >
-              15 min →
-            </button>
-          </div>
-          <div style={{display:'flex',gap:8,marginTop:8}}>
-            <button onClick={()=>setMealMode('default')} style={{background:mealMode==='default'?'#EFF6FF':'var(--white)',border:`1px solid ${mealMode==='default'?'#BFDBFE':'var(--border)'}`,borderRadius:999,padding:'7px 12px',fontSize:11,fontWeight:800,color:mealMode==='default'?'var(--navy)':'var(--gray)',cursor:'pointer',fontFamily:'inherit'}}>Balanced ideas</button>
-            <button onClick={()=>{ setMealMode('rescue'); generateMeals(period, true, 'rescue'); }} style={{background:mealMode==='rescue'?'#DCFCE7':'var(--white)',border:`1px solid ${mealMode==='rescue'?'#86EFAC':'var(--border)'}`,borderRadius:999,padding:'7px 12px',fontSize:11,fontWeight:800,color:mealMode==='rescue'?'#15803D':'var(--gray)',cursor:'pointer',fontFamily:'inherit'}}>Rescue mode</button>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <button onClick={()=>setMealMode('default')} style={{background:mealMode==='default'?'#EFF6FF':'transparent',border:'none',borderRadius:999,padding:'7px 12px',fontSize:11,fontWeight:800,color:mealMode==='default'?'var(--navy)':'var(--gray)',cursor:'pointer',fontFamily:'inherit'}}>Balanced ideas</button>
+              <button onClick={()=>{ setMealMode('rescue'); generateMeals(period, true, 'rescue'); }} style={{background:mealMode==='rescue'?'#DCFCE7':'transparent',border:'none',borderRadius:999,padding:'7px 12px',fontSize:11,fontWeight:800,color:mealMode==='rescue'?'#15803D':'var(--gray)',cursor:'pointer',fontFamily:'inherit'}}>6PM Solution</button>
+            </div>
           </div>
         </div>
 
@@ -2117,14 +2227,14 @@ export default function App() {
 
         {/* Expiry alert */}
         {urgentNames.length>0&&(
-          <div style={{display:'flex',alignItems:'center',gap:8,background:'#FEF2F2',border:'1px solid #FCA5A5',borderRadius:12,margin:'10px 14px 0',padding:'9px 13px',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,background:'#FEF2F2',border:'1px solid #FCA5A5',borderRadius:12,margin:'10px 20px 0',padding:'9px 13px',flexShrink:0}}>
             <span>⚠️</span>
             <span style={{fontSize:12,color:'#B91C1C',fontWeight:600,flex:1}}>{urgentNames.join(', ')} expire today — prioritised</span>
           </div>
         )}
 
         {/* Meal cards */}
-        <div style={{flex:1,overflowY:'auto',padding:'12px 14px 24px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'16px 20px 28px'}}>
           {loadingMeals?(
             [1,2,3].map(i=><div key={i} className="shimmer-card" style={{height:160}}/>)
           ):!currentMeals?.length&&pantry.length===0?(
@@ -2285,8 +2395,7 @@ export default function App() {
         }, 0) / usedThisMonth.length).toFixed(1)
       : null;
 
-    const spendSource = pantry.filter(item => item.addedAt && new Date(item.addedAt) >= thisMonth);
-    const spendBase = spendSource.length ? spendSource : pantry;
+    const spendBase = pantry;
     const categorySpend = Object.entries(
       spendBase.reduce((map, item) => {
         const bucket = item.cat || 'Other';
@@ -2330,7 +2439,7 @@ export default function App() {
 
           <div style={{background:'var(--white)',borderRadius:20,padding:18,marginBottom:12,border:'1px solid var(--border)'}}>
             <div style={{fontSize:18,fontWeight:900,color:'var(--ink)',marginBottom:2}}>Spending by category</div>
-            <div style={{fontSize:12,color:'var(--gray)',marginBottom:14}}>Tracked in your fridge {categoryTotal>0 ? `· Total ${fmt(categoryTotal)}` : 'this month'}</div>
+            <div style={{fontSize:12,color:'var(--gray)',marginBottom:14}}>{categoryTotal>0 ? `Estimated current fridge value · Total ${fmt(categoryTotal)}` : 'Uses local market pricing for what is in your fridge right now'}</div>
             {categorySpend.length ? (
               <div style={{display:'flex',alignItems:'center',gap:16}}>
                 <svg width="128" height="128" viewBox="0 0 128 128" style={{flexShrink:0}}>
