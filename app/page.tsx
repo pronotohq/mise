@@ -375,6 +375,8 @@ export default function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [recording, setRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [manualText, setManualText] = useState('');
+  const [manualLoading, setManualLoading] = useState(false);
   const [period, setPeriod] = useState('dinner');
   const [meals, setMeals] = useState<Record<string,Meal[]>>({});
   const [loadingMeals, setLoadingMeals] = useState(false);
@@ -980,9 +982,17 @@ export default function App() {
       fd.append('lang', navigator.language || 'en');
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
-      if(data.items?.length) addItems(data.items, {interactive:true, src:'🎙️'});
+      if(data.items?.length) addItems(data.items, {interactive:true, src:'✏️'});
       else showToast('Nothing recognised — try again');
     } catch { showToast('Parse error'); }
+  };
+
+  const submitManualText = async () => {
+    if(!manualText.trim()) return;
+    setManualLoading(true);
+    await parseText(manualText.trim());
+    setManualText('');
+    setManualLoading(false);
   };
 
   // ── Generate meals ──────────────────────────────────────────────
@@ -1420,6 +1430,24 @@ export default function App() {
           <div className="card" style={{marginBottom:12,animation:'fadeIn .2s'}}>
             <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:12}}>ADD TO FRIDGE</p>
 
+            {/* ✏️ Manual text input */}
+            <div style={{background:'var(--grayL)',border:'1.5px solid var(--border)',borderRadius:14,padding:'12px 14px',marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginBottom:8}}>✏️ TYPE WHAT YOU BOUGHT</div>
+              <div style={{display:'flex',gap:8}}>
+                <input
+                  value={manualText}
+                  onChange={e=>setManualText(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); submitManualText(); } }}
+                  placeholder='e.g. "2 mangoes, 400g curd, 1L milk"'
+                  style={{flex:1,borderRadius:10,border:'1.5px solid var(--border)',padding:'9px 12px',fontSize:13,fontFamily:'inherit',color:'var(--ink)',background:'var(--white)',outline:'none'}}
+                />
+                <button onClick={submitManualText} disabled={manualLoading||!manualText.trim()}
+                  style={{background:manualLoading||!manualText.trim()?'#D1D5DB':'var(--navy)',border:'none',borderRadius:10,padding:'9px 14px',fontSize:13,fontWeight:800,color:'#fff',cursor:manualLoading||!manualText.trim()?'default':'pointer',fontFamily:'inherit',flexShrink:0,transition:'background .2s'}}>
+                  {manualLoading?'…':'Add'}
+                </button>
+              </div>
+            </div>
+
             {/* Voice */}
             <button onClick={startVoice}
               style={{width:'100%',background:recording?'#FEE2E2':'#EFF6FF',border:`1.5px solid ${recording?'#FCA5A5':'#BFDBFE'}`,borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',marginBottom:10}}>
@@ -1593,7 +1621,7 @@ export default function App() {
             {urgent.length>0&&<>
               <div style={{display:'flex',alignItems:'center',gap:7,marginTop:12,marginBottom:8}}>
                 <div style={{width:8,height:8,borderRadius:4,background:'var(--red)'}}/>
-                <span style={{fontWeight:800,fontSize:11,color:'var(--red)',letterSpacing:.6}}>EXPIRES TODAY — COOK FIRST</span>
+                <span style={{fontWeight:800,fontSize:11,color:'var(--red)',letterSpacing:.6}}>URGENT — USE TODAY</span>
                 <span className="pill pill-red">{urgent.length}</span>
               </div>
               {urgent.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry} onDelete={deleteItem}/>)}
@@ -1601,7 +1629,7 @@ export default function App() {
             {expiring.length>0&&<>
               <div style={{display:'flex',alignItems:'center',gap:7,marginTop:14,marginBottom:8}}>
                 <div style={{width:8,height:8,borderRadius:4,background:'var(--gold)'}}/>
-                <span style={{fontWeight:800,fontSize:11,color:'var(--goldD)',letterSpacing:.6}}>EXPIRING IN 2–3 DAYS</span>
+                <span style={{fontWeight:800,fontSize:11,color:'var(--goldD)',letterSpacing:.6}}>USE IN NEXT FEW DAYS</span>
                 <span className="pill pill-amber">{expiring.length}</span>
               </div>
               {expiring.map(i=><PantryRow key={i.id} item={i} onTap={setActionItem} onEditExpiry={setEditExpiry} onDelete={deleteItem}/>)}
@@ -1924,24 +1952,6 @@ export default function App() {
   const renderInsights = () => {
     const total = pantry.reduce((a,i)=>a+(i.price||0),0);
 
-    // ── Money saved vs takeout ──────────────────
-    const AVG_TAKEOUT = region.avgTakeout;
-    const moneySaved = cookLog.length * AVG_TAKEOUT;
-
-    // ── Cook streak ─────────────────────────────
-    const streak = (() => {
-      if(!cookLog.length) return 0;
-      const days = [...new Set(cookLog.map(l=>l.date.slice(0,10)))].sort().reverse();
-      let s = 0;
-      const today = new Date(); today.setHours(0,0,0,0);
-      for(let i=0;i<days.length;i++){
-        const d = new Date(days[i]);
-        const diff = Math.round((today.getTime()-d.getTime())/(86400000));
-        if(diff===i||diff===i+1){ s++; } else break;
-      }
-      return s;
-    })();
-
     // ── Fridge efficiency score ──────────────────
     const totalUsed   = ateLog.length + cookLog.length;
     const totalWasted = wasteLog.length;
@@ -1984,50 +1994,76 @@ export default function App() {
         </div>
         <div style={{overflowY:'auto',padding:'4px 16px 32px'}}>
 
-          {/* ── Hero: money saved — PREMIUM only, teaser for free ── */}
-          <div style={{background:'linear-gradient(135deg,#14532D,#166534)',borderRadius:20,padding:20,marginBottom:12,position:'relative',overflow:'hidden'}}>
-            <p style={{fontSize:11,color:'#86EFAC',fontWeight:700,letterSpacing:.6}}>SAVED VS ORDERING IN</p>
-            {isPremium?(
-              <>
-                <p style={{fontSize:38,fontWeight:900,color:'#fff',marginTop:4}}>{fmt(moneySaved)}</p>
-                <p style={{fontSize:13,color:'#BBF7D0',marginTop:2}}>{cookLog.length} home-cooked meals · avg {fmt(AVG_TAKEOUT)} saved each</p>
-                <p style={{fontSize:10,color:'#6EE7B7',marginTop:4}}>Based on avg local takeout cost · update in settings</p>
-              </>
-            ):(
-              <>
-                <p style={{fontSize:38,fontWeight:900,color:'#fff',marginTop:4,filter:'blur(6px)',userSelect:'none'}}>••••</p>
-                <p style={{fontSize:13,color:'#BBF7D0',marginTop:2}}>{cookLog.length} meals cooked at home</p>
-                <button onClick={()=>setShowPremium(true)} style={{marginTop:8,background:'#22C55E',border:'none',borderRadius:10,padding:'7px 14px',fontSize:12,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:'inherit'}}>
-                  See how much you saved →
-                </button>
-              </>
-            )}
-            <div style={{display:'flex',gap:20,marginTop:14}}>
-              {[[urgent.length,'expire today'],[pantry.filter(i=>daysLeft(i.expiry)<=3).length,'use in 3 days'],[fmt(total),'in fridge now']].map(([v,l])=>(
-                <div key={String(l)}><div style={{fontWeight:900,fontSize:16,color:'#fff'}}>{v}</div><div style={{fontSize:10,color:'#86EFAC'}}>{l}</div></div>
-              ))}
-            </div>
-          </div>
+          {/* ── Hero: food saved from waste ── */}
+          {(()=>{
+            const usedThisMonth = ateLog.filter(a=>new Date(a.date)>=thisMonth);
+            const savedFromWaste = usedThisMonth.reduce((s,a)=>{
+              const p=(a.price&&a.price>0)?a.price:getMarketPrice(a.name,regionCode,region.priceMultiplier);
+              return s+Math.min(p,region.avgTakeout);
+            },0);
+            const totalItems = usedThisMonth.length + wasteThisMonth.length;
+            const effPct = totalItems>0 ? Math.round(usedThisMonth.length/totalItems*100) : 100;
+            return (
+              <div style={{background:'linear-gradient(135deg,#1E3A8A,#1D4ED8)',borderRadius:20,padding:20,marginBottom:12,position:'relative',overflow:'hidden'}}>
+                <p style={{fontSize:11,color:'#93C5FD',fontWeight:700,letterSpacing:.6}}>THIS MONTH&apos;S WIN 🏆</p>
+                <p style={{fontSize:38,fontWeight:900,color:'#fff',marginTop:4}}>{fmt(savedFromWaste)}<span style={{fontSize:16,fontWeight:600,color:'#BFDBFE'}}> saved</span></p>
+                <p style={{fontSize:12,color:'#BFDBFE',marginTop:2}}>by using food before it expired!</p>
+                <div style={{display:'flex',gap:20,marginTop:14}}>
+                  {[[usedThisMonth.length,'items used'],[wasteThisMonth.length,'wasted'],[`${effPct}%`,'efficiency']].map(([v,l])=>(
+                    <div key={String(l)}>
+                      <div style={{fontWeight:900,fontSize:18,color:'#fff'}}>{v}</div>
+                      <div style={{fontSize:10,color:'#93C5FD',marginTop:1}}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Progress bar */}
+                <div style={{marginTop:14,height:6,background:'rgba(255,255,255,.2)',borderRadius:3}}>
+                  <div style={{height:6,background:'#22C55E',borderRadius:3,width:`${effPct}%`,transition:'width .6s'}}/>
+                </div>
+              </div>
+            );
+          })()}
 
-          {/* ── Row: streak + efficiency ── */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-            <div style={{background:'var(--white)',borderRadius:16,padding:16,border:'1px solid var(--border)'}}>
-              <div style={{fontSize:28,marginBottom:6}}>🔥</div>
-              <div style={{fontSize:28,fontWeight:900,color:streak>0?'#EA580C':'var(--gray)'}}>{streak}</div>
-              <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginTop:2}}>day cook streak</div>
-              <div style={{fontSize:10,color:'var(--gray)',marginTop:4}}>{streak===0?'Cook today to start':'Keep it going!'}</div>
-            </div>
-            <div style={{background:'var(--white)',borderRadius:16,padding:16,border:'1px solid var(--border)'}}>
-              <div style={{fontSize:28,marginBottom:6}}>⚡</div>
-              <div style={{fontSize:28,fontWeight:900,color:effScore===null?'var(--gray)':effScore>=80?'#16A34A':effScore>=50?'#D97706':'#DC2626'}}>
-                {effScore===null?'—':`${effScore}%`}
+          {/* ── Row: avg lifespan + efficiency ── */}
+          {(()=>{
+            const lifespanItems = ateLog.filter(a=>a.date);
+            const avgLifespan = lifespanItems.length>0
+              ? (lifespanItems.reduce((s,a)=>{
+                  const item=pantry.find(p=>p.name.toLowerCase()===a.name.toLowerCase());
+                  return s+(item ? daysLeft(item.expiry)+1 : 4);
+                },0)/lifespanItems.length).toFixed(1)
+              : '—';
+            const topWasted = Object.entries(
+              wasteLog.reduce((m,w)=>({...m,[w.name]:{count:(m[w.name]?.count||0)+1,emoji:w.emoji}}),{} as Record<string,{count:number;emoji:string}>)
+            ).sort((a,b)=>b[1].count-a[1].count)[0];
+            return (
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+                <div style={{background:'var(--white)',borderRadius:16,padding:16,border:'1px solid var(--border)'}}>
+                  <div style={{fontSize:22,marginBottom:6}}>📅</div>
+                  <div style={{fontSize:24,fontWeight:900,color:'var(--ink)'}}>{avgLifespan}</div>
+                  <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginTop:2}}>Avg item lifespan</div>
+                  <div style={{fontSize:10,color:'var(--gray)',marginTop:4}}>days before used</div>
+                </div>
+                <div style={{background:'var(--white)',borderRadius:16,padding:16,border:'1px solid var(--border)'}}>
+                  {topWasted ? (
+                    <>
+                      <div style={{fontSize:22,marginBottom:6}}>{topWasted[1].emoji}</div>
+                      <div style={{fontSize:16,fontWeight:900,color:'#DC2626',marginBottom:2}}>{topWasted[0]}</div>
+                      <div style={{fontSize:11,fontWeight:700,color:'var(--gray)'}}>Most wasted</div>
+                      <div style={{fontSize:10,color:'var(--gray)',marginTop:4}}>wasted {topWasted[1].count}× — try buying less</div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{fontSize:22,marginBottom:6}}>⚡</div>
+                      <div style={{fontSize:24,fontWeight:900,color:'#16A34A'}}>{effScore===null?'—':`${effScore}%`}</div>
+                      <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginTop:2}}>Fridge efficiency</div>
+                      <div style={{fontSize:10,color:'var(--gray)',marginTop:4}}>{effScore===null?'Add items to track':'No waste yet — great!'}</div>
+                    </>
+                  )}
+                </div>
               </div>
-              <div style={{fontSize:11,fontWeight:700,color:'var(--gray)',marginTop:2}}>fridge efficiency</div>
-              <div style={{fontSize:10,color:'var(--gray)',marginTop:4}}>
-                {effScore===null?'Mark items as eaten to track':effScore>=80?'Excellent — almost no waste':effScore>=50?'Room to improve':'Try using expiring items first'}
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* ── Cooking personality ── */}
           {personality&&(
@@ -2127,19 +2163,42 @@ export default function App() {
           ))}
         </div>
 
-        {/* ── Order-to-Fridge Auto-Sync ── */}
-        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:18,marginBottom:14,overflow:'hidden',opacity:.85}}>
-          {/* Header */}
-          <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px'}}>
-            <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,#94A3B8,#64748B)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔄</div>
-            <div style={{flex:1}}>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <span style={{fontSize:14,fontWeight:800,color:'var(--ink)'}}>Order → Fridge Auto-Sync</span>
-                <span style={{fontSize:10,fontWeight:800,background:'linear-gradient(135deg,#7C3AED,#5B21B6)',color:'#fff',borderRadius:8,padding:'2px 8px',letterSpacing:.4}}>🚀 Coming Soon</span>
+        {/* ── Toddler / Kid Safety Filter ── */}
+        {profile.hasToddler&&(
+          <div style={{background:'#FFFBEB',border:'1.5px solid #FDE68A',borderRadius:18,marginBottom:14,padding:16}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+              <div style={{width:40,height:40,borderRadius:12,background:'#FEF3C7',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>👶</div>
+              <div>
+                <div style={{fontSize:14,fontWeight:800,color:'#92400E'}}>{profile.toddlerName||'Child'}&apos;s safety filter <span style={{fontSize:11,background:'#22C55E',color:'#fff',borderRadius:6,padding:'1px 8px',marginLeft:4,fontWeight:700}}>auto-on</span></div>
+                <div style={{fontSize:11,color:'#B45309',marginTop:1}}>Applied to all daily recipe suggestions</div>
               </div>
-              <div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>Auto-import items from FoodPanda, GrabMart & more</div>
             </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
+              {['🌶️ Spicy food','🥜 Whole nuts','🍯 Raw honey','🐟 Raw fish / shellfish','⚠️ Choking hazards','🧂 Excess salt'].map(tag=>(
+                <div key={tag} style={{display:'flex',alignItems:'center',gap:4,background:'#FEF3C7',border:'1px solid #FCD34D',borderRadius:20,padding:'4px 10px',fontSize:11,fontWeight:700,color:'#92400E'}}>
+                  <span style={{fontSize:10}}>✕</span> {tag}
+                </div>
+              ))}
+            </div>
+            <p style={{fontSize:11,color:'#B45309',lineHeight:1.6}}>Every recipe suggestion checks these automatically. You never have to filter manually.</p>
           </div>
+        )}
+
+        {/* ── Notification settings ── */}
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:18,marginBottom:14,overflow:'hidden'}}>
+          <div style={{padding:'14px 16px'}}>
+            <div style={{fontSize:14,fontWeight:800,color:'var(--ink)',marginBottom:12}}>Daily dinner notification</div>
+            {[['🔔','Send suggestion at','5:30 PM'],['📱','Send to','Push'],['🔄','Suggestion changes when','New items added']].map(([ic,lb,val],i,arr)=>(
+              <div key={lb} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
+                <span style={{fontSize:18,flexShrink:0,width:24,textAlign:'center'}}>{ic}</span>
+                <div style={{flex:1,fontSize:13,color:'var(--inkM)'}}>{lb}</div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{val}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {false&&(<div style={{display:'none'}}>
 
           {false&&(
             <div style={{borderTop:'1px solid var(--border)',padding:'16px'}}>
