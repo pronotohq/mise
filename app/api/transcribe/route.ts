@@ -44,16 +44,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ items: [], transcript: '' });
     }
 
+    const country = (dietary.country ?? 'IN') as 'IN'|'SG'|'US';
+    const currencyLabel = country === 'SG' ? 'SGD (Singapore dollars)' : country === 'US' ? 'USD (US dollars)' : 'INR (Indian rupees)';
+
     // ── 2. Extract structured items with GPT-4o-mini ──────────
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 800,
+      max_tokens: 900,
       response_format: { type: 'json_object' },
       messages: [{
         role: 'system',
         content: `You extract grocery items from speech or text.
 Return a JSON object with key "items" — an array of objects:
-{ "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }
+{ "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string, "price": number }
+
+price: realistic current retail price (whole number, in ${currencyLabel}) for the stated quantity of this item in the user's country (${country}). Base it on typical supermarket/grocery-delivery prices — NOT restaurant prices, NOT wholesale. If you genuinely don't know, omit the price field rather than guess wildly. For Singapore use FairPrice/RedMart-level prices; for India use Blinkit/BigBasket-level; for US use typical grocery chain prices.
 
 Rules:
 - item_name: preserve the name in the language spoken. If the user said "Tamatar", use "Tamatar". If they said "Tomato", use "Tomato". If they said "1 kg Tamatar", use "Tamatar". Keep regional names authentic.

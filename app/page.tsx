@@ -21,7 +21,16 @@ interface Profile {
   hasToddler: boolean; toddlerName: string; toddlerAge: number;
   familySize: number; allergies: string[];
   notifTimes: Record<string, string>;
+  cuisines?: string[];
 }
+
+const CUISINES: {id:string;emoji:string;name:string;examples:string}[] = [
+  {id:'Indian',       emoji:'🇮🇳', name:'Indian everyday',     examples:'Dal, sabzi, roti, chawal, khichdi, poha, upma, sawaiyan'},
+  {id:'Asian',        emoji:'🍜', name:'Asian',                examples:'Stir fry, fried rice, noodles, curry, dim sum'},
+  {id:'Western',      emoji:'🍝', name:'Western / Continental',examples:'Pasta, sandwiches, salads, grilled food'},
+  {id:'Mexican',      emoji:'🌮', name:'Mexican / Middle Eastern',examples:'Wraps, tacos, hummus, kebabs'},
+  {id:'Mediterranean',emoji:'🥗', name:'Mediterranean',        examples:'Grain bowls, roasted veggies, fish, olive oil'},
+];
 
 const COUNTRIES: { id: Country; label: string; flag: string; cities: string[] }[] = [
   { id: 'IN', label: 'India',     flag: '🇮🇳', cities: ['Mumbai','Delhi','Bangalore','Hyderabad','Pune','Chennai'] },
@@ -49,10 +58,10 @@ const STORES: Record<Country, { name: string; emoji: string; url: (q: string) =>
     { name: 'Amazon IN',   emoji: '🟠', url: (q) => `https://www.amazon.in/s?k=${encodeURIComponent(q)}` },
   ],
   SG: [
-    { name: 'RedMart',     emoji: '🔴', url: (q) => `https://redmart.lazada.sg/catalog/?q=${encodeURIComponent(q)}` },
-    { name: 'FairPrice',   emoji: '🟢', url: (q) => `https://www.fairprice.com.sg/search?query=${encodeURIComponent(q)}` },
-    { name: 'Shopee SG',   emoji: '🟠', url: (q) => `https://shopee.sg/search?keyword=${encodeURIComponent(q)}` },
-    { name: 'Amazon SG',   emoji: '🔵', url: (q) => `https://www.amazon.sg/s?k=${encodeURIComponent(q)}` },
+    { name: 'Shopee',    emoji: '🟠', url: (q) => `https://shopee.sg/search?keyword=${encodeURIComponent(q)}` },
+    { name: 'GrabMart',  emoji: '🟢', url: (q) => `https://food.grab.com/sg/en/mart/search?keyword=${encodeURIComponent(q)}` },
+    { name: 'Amazon SG', emoji: '🔵', url: (q) => `https://www.amazon.sg/s?k=${encodeURIComponent(q)}` },
+    { name: 'RedMart',   emoji: '🔴', url: (q) => `https://redmart.lazada.sg/catalog/?q=${encodeURIComponent(q)}` },
   ],
   US: [
     { name: 'Instacart',   emoji: '🥕', url: (q) => `https://www.instacart.com/store/s?k=${encodeURIComponent(q)}` },
@@ -167,8 +176,8 @@ function FridgeItem({item,onClick,currencySymbol}:{item:PantryItem;onClick:()=>v
       <div style={{
         width:40,height:40,borderRadius:10,background:ct.bg,
         display:'flex',alignItems:'center',justifyContent:'center',
-        flexShrink:0,fontFamily:'var(--serif)',fontSize:16,fontWeight:500,color:ct.fg,
-      }}>{item.name.charAt(0).toUpperCase()}</div>
+        flexShrink:0,fontSize:22,
+      }}>{item.emoji||item.name.charAt(0).toUpperCase()}</div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:14,fontWeight:700,color:'var(--ink)',letterSpacing:-.1}}>{item.name}</div>
         <div style={{fontSize:11.5,color:'var(--gray)',marginTop:2}}>{item.qty}{item.unit} · {item.cat} · {item.src==='🎙️'?'voice':item.src==='✍️'?'manual':item.src==='📷'?'scan':item.src}</div>
@@ -217,6 +226,23 @@ export default function App() {
   const mediaRecorderRef = useRef<MediaRecorder|null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  // ── Detect country from browser locale ──────────────────────────
+  const detectCountry = (): Country => {
+    if (typeof navigator === 'undefined') return 'IN';
+    const lang = navigator.language || 'en-IN';
+    const region = lang.split('-')[1]?.toUpperCase();
+    if (region === 'SG') return 'SG';
+    if (region === 'US') return 'US';
+    if (region === 'IN') return 'IN';
+    // Fallback: timezone hint
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz.includes('Singapore')) return 'SG';
+      if (tz.startsWith('America/')) return 'US';
+    } catch {}
+    return 'IN';
+  };
+
   // ── Load from localStorage ──────────────────────────────────────
   useEffect(()=>{
     try {
@@ -224,12 +250,15 @@ export default function App() {
       if(saved) {
         const d = JSON.parse(saved);
         if(d.onboardingDone) setOnboardingDone(true);
-        if(d.profile)  setProfile({ country: 'IN', ...d.profile });
+        if(d.profile)  setProfile({ country: detectCountry(), ...d.profile });
+        else setProfile(p => ({ ...p, country: detectCountry() }));
         if(d.family)   setFamily(d.family);
         if(d.pantry)   setPantry(d.pantry);
         if(d.cookLog)  setCookLog(d.cookLog);
         if(d.isPremium) setIsPremium(true);
         if(d.shopList) setShopList(d.shopList);
+      } else {
+        setProfile(p => ({ ...p, country: detectCountry() }));
       }
     } catch{}
   },[]);
@@ -249,7 +278,7 @@ export default function App() {
   };
 
   // ── Onboarding ──────────────────────────────────────────────────
-  const OB_STEPS = ['welcome','name','family','diet','sources','notifications','done'];
+  const OB_STEPS = ['welcome','name','household','sources','cuisines','notifications','done'];
   const obPct = Math.round(((obStep+1)/OB_STEPS.length)*100);
 
   const completeOnboarding = () => {
@@ -352,15 +381,20 @@ export default function App() {
     if(mediaRecorderRef.current?.state==='recording') mediaRecorderRef.current.stop();
   };
 
+  const [pendingItems, setPendingItems] = useState<{item_name:string;quantity:number;unit:string;category:string;emoji:string;price?:number}[]>([]);
+
   const sendToWhisper = async (blob: Blob) => {
     try {
       const fd = new FormData();
       fd.append('audio', blob, 'voice.webm');
-      fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs}));
+      fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs,country:profile.country}));
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
       if(data.transcript) setVoiceTranscript(data.transcript);
-      if(data.items?.length) addItems(data.items);
+      if(data.items?.length) setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
+        item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
+        category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+      })));
       else showToast('Could not parse that — try again');
     } catch { showToast('Voice processing failed'); }
   };
@@ -369,12 +403,36 @@ export default function App() {
     try {
       const fd = new FormData();
       fd.append('text', text);
-      fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs}));
+      fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs,country:profile.country}));
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
-      if(data.items?.length) addItems(data.items);
+      if(data.items?.length) setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
+        item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
+        category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+      })));
       else showToast('Nothing recognised — try again');
     } catch { showToast('Parse error'); }
+  };
+
+  const confirmPending = () => {
+    if (!pendingItems.length) return;
+    // addItems expects the API shape; our pending items already conform. Inject price where provided.
+    setPantry(p => {
+      const news: PantryItem[] = pendingItems.map(i => {
+        const days = getShelfDays(i.item_name);
+        return {
+          id: uid(), name: i.item_name, emoji: i.emoji, cat: i.category,
+          qty: i.quantity, unit: i.unit, price: i.price ?? 0,
+          expiry: expiryDate(days), expDays: days, src: '🎙️',
+        };
+      });
+      const updated = [...news, ...p];
+      save({pantry:updated});
+      return updated;
+    });
+    showToast(`✓ Added ${pendingItems.length} item${pendingItems.length>1?'s':''}`);
+    setPendingItems([]);
+    setShowAdd(false);
   };
 
   // ── Generate meals ──────────────────────────────────────────────
@@ -387,7 +445,7 @@ export default function App() {
       const res  = await fetch('/api/meals', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({pantry, period:p, dietary:profile, recentlyCooked}),
+        body: JSON.stringify({pantry, period:p, dietary:profile, recentlyCooked, cuisines: profile.cuisines||[]}),
       });
       const data = await res.json();
       if(data.meals?.length) setMeals(m=>({...m,[p]:data.meals}));
@@ -396,6 +454,7 @@ export default function App() {
   },[pantry, cookLog, profile, meals]);
 
   useEffect(()=>{ if(tab==='meals') generateMeals(period); },[tab,period]);
+  useEffect(()=>{ if(!showAdd){ setPendingItems([]); setVoiceTranscript(''); } },[showAdd]);
 
   // ── Pantry helpers ──────────────────────────────────────────────
   const markUsed=(id:string)=>{
@@ -443,7 +502,7 @@ export default function App() {
 
   // ── Nav helpers ─────────────────────────────────────────────────
   const navItems = [
-    {id:'fridge',  icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg>,label:'Fridge'},
+    {id:'fridge',  icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="5" y="3" width="14" height="18" rx="2.5"/><line x1="5" y1="11" x2="19" y2="11"/><line x1="8" y1="7" x2="8" y2="9"/><line x1="8" y1="14" x2="8" y2="17"/></svg>,label:'Fridge'},
     {id:'meals',   icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>,label:'Meals'},
     {id:'shop',    icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>,label:'Shop'},
     {id:'insights',icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,label:'Insights'},
@@ -484,10 +543,10 @@ export default function App() {
           </div>
         )}
 
-        {step==='family'&&(
-          <div style={{flex:1,padding:'28px 22px'}}>
+        {step==='household'&&(
+          <div style={{flex:1,padding:'28px 22px',overflowY:'auto'}}>
             <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>Who&apos;s at the table?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Portion sizes adapt to your household.</p>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Portion sizes &amp; diet preferences adapt to your household.</p>
             <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>FAMILY SIZE</p>
             <div style={{display:'flex',gap:8,marginBottom:22}}>
               {[1,2,3,4,'5+'].map(n=>{
@@ -515,7 +574,7 @@ export default function App() {
               })}
             </div>
             {profile.hasToddler&&(
-              <div style={{background:'var(--white)',border:`1px solid var(--border)`,borderRadius:14,padding:14}}>
+              <div style={{background:'var(--white)',border:`1px solid var(--border)`,borderRadius:14,padding:14,marginBottom:18}}>
                 <div style={{fontSize:12,color:'var(--gray)',marginBottom:8}}>Auto-filtered from all suggestions:</div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
                   {['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt'].map(f=>(
@@ -528,26 +587,33 @@ export default function App() {
                 </div>
               </div>
             )}
-          </div>
-        )}
 
-        {step==='diet'&&(
-          <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What do you eat?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Every suggestion will match this.</p>
-            {[['🥗','Vegetarian','No meat or seafood',true],['🌱','Vegan','Plant-based only',false],['🍽️','Everything','No restrictions',false],['🕌','Halal','No pork',false]].map(([ic,lb,sub,isVeg])=>(
-              <div key={lb as string} onClick={()=>setProfile(p=>({...p,isVeg:!!isVeg}))}
-                style={{background:profile.isVeg===!!isVeg&&(lb==='Vegetarian'&&profile.isVeg||lb!=='Vegetarian'&&!profile.isVeg)?'#FAF2EE':'',border:`1.5px solid ${profile.isVeg===!!isVeg&&(lb==='Vegetarian'&&profile.isVeg||lb!=='Vegetarian'&&!profile.isVeg)?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:13,display:'flex',alignItems:'center',gap:12,marginBottom:9,cursor:'pointer'}}>
-                <span style={{fontSize:22}}>{ic}</span>
-                <div><div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>{lb}</div><div style={{fontSize:12,color:'var(--gray)'}}>{sub}</div></div>
-              </div>
-            ))}
+            <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginTop:18,marginBottom:10}}>DIET</p>
+            <div style={{display:'grid',gap:8,marginBottom:10}}>
+              {[
+                {id:'veg'   as const, t:'Vegetarian',  s:'No meat or seafood'},
+                {id:'vegan' as const, t:'Vegan',       s:'Plant-based only'},
+                {id:'all'   as const, t:'Everything',  s:'No restrictions'},
+                {id:'halal' as const, t:'Halal',       s:'No pork'},
+              ].map(o=>{
+                const isVeg = o.id==='veg'||o.id==='vegan';
+                const active = (profile.isVeg===isVeg) && ((o.id==='veg'&&!profile.eatsEggs===false)||(o.id!=='veg'));
+                const mark = profile.isVeg===isVeg;
+                return (
+                  <div key={o.id} onClick={()=>setProfile(p=>({...p,isVeg}))}
+                    style={{background:mark?'var(--ink)':'var(--white)',border:`1.5px solid ${mark?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:mark?'var(--cream)':'var(--ink)'}}>{o.t}</div>
+                    <div style={{fontSize:12,color:mark?'var(--cream)':'var(--gray)',opacity:mark?.75:1,marginTop:2}}>{o.s}</div>
+                  </div>
+                );
+              })}
+            </div>
             {profile.isVeg&&(
-              <div style={{background:'#FAF2EE',border:'1px solid #F4D8C8',borderRadius:14,padding:14,marginTop:6}}>
-                <p style={{fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:10}}>Do you eat eggs?</p>
+              <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:14,marginTop:6}}>
+                <p style={{fontSize:12,color:'var(--gray)',marginBottom:10}}>Do you eat eggs?</p>
                 <div style={{display:'flex',gap:8}}>
-                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:true}))} style={{flex:1,background:profile.eatsEggs?'var(--navy)':'#fff',color:profile.eatsEggs?'#fff':'var(--gray)',border:'1px solid var(--border)',borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}>Yes, I eat eggs 🥚</button>
-                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:false}))} style={{flex:1,background:!profile.eatsEggs?'var(--navy)':'#fff',color:!profile.eatsEggs?'#fff':'var(--gray)',border:'1px solid var(--border)',borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}>No eggs</button>
+                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:true}))} style={{flex:1,background:profile.eatsEggs?'var(--ink)':'var(--cream)',color:profile.eatsEggs?'var(--cream)':'var(--ink)',border:`1px solid ${profile.eatsEggs?'var(--ink)':'var(--border)'}`,borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}>Yes 🥚</button>
+                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:false}))} style={{flex:1,background:!profile.eatsEggs?'var(--ink)':'var(--cream)',color:!profile.eatsEggs?'var(--cream)':'var(--ink)',border:`1px solid ${!profile.eatsEggs?'var(--ink)':'var(--border)'}`,borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}>No eggs</button>
                 </div>
               </div>
             )}
@@ -586,6 +652,32 @@ export default function App() {
                   {orderSyncInterest?'✓ You\u2019re on the list':'Yes, count me in'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {step==='cuisines'&&(
+          <div style={{flex:1,padding:'28px 22px',overflowY:'auto'}}>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>What do you usually cook?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22,lineHeight:1.5}}>Pick all that apply — your meal suggestions will match your actual cooking style. Even 1 is enough.</p>
+            <div style={{display:'grid',gap:10}}>
+              {CUISINES.map(c=>{
+                const selected = (profile.cuisines??[]).includes(c.id);
+                return (
+                  <div key={c.id} onClick={()=>setProfile(p=>({
+                    ...p,
+                    cuisines: selected ? (p.cuisines||[]).filter(x=>x!==c.id) : [...(p.cuisines||[]), c.id]
+                  }))}
+                    style={{background:selected?'var(--ink)':'var(--white)',border:`1.5px solid ${selected?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'flex-start',gap:14,cursor:'pointer'}}>
+                    <span style={{fontSize:28,flexShrink:0,lineHeight:1}}>{c.emoji}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:700,color:selected?'var(--cream)':'var(--ink)'}}>{c.name}</div>
+                      <div style={{fontSize:12,color:selected?'var(--cream)':'var(--gray)',opacity:selected?.75:1,marginTop:3,lineHeight:1.5}}>{c.examples}</div>
+                    </div>
+                    {selected&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0}}>✓</div>}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -681,10 +773,10 @@ export default function App() {
           <div style={{padding:'16px 16px 0'}}>
             <div style={{background:'linear-gradient(135deg,#C94A3A 0%,#A8382A 100%)',borderRadius:14,padding:16,color:'#fff',position:'relative',overflow:'hidden'}}>
               <div style={{position:'absolute',right:-20,top:-20,width:120,height:120,borderRadius:120,background:'rgba(255,255,255,0.08)'}}/>
-              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.5,opacity:.85}}>RESCUE TONIGHT</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.5,opacity:.85}}>RESCUE TODAY</div>
               <div style={{fontFamily:'var(--serif)',fontSize:22,fontWeight:500,marginTop:4,letterSpacing:-.3}}>{urgentItems.length} item{urgentItems.length>1?'s':''} want{urgentItems.length===1?'s':''} cooking today</div>
               <div style={{fontSize:12,opacity:.92,marginTop:4}}>{urgentItems.slice(0,3).map(i=>i.name).join(' · ')}</div>
-              <button onClick={()=>setTab('meals')} style={{marginTop:12,background:'#fff',color:'#C94A3A',border:'none',borderRadius:999,padding:'8px 14px',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>See tonight&apos;s recipes →</button>
+              <button onClick={()=>setTab('meals')} style={{marginTop:12,background:'#fff',color:'#C94A3A',border:'none',borderRadius:999,padding:'8px 14px',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>See today&apos;s recipe →</button>
             </div>
           </div>
         )}
@@ -1106,122 +1198,284 @@ export default function App() {
   // INSIGHTS SCREEN
   // ════════════════════════════════════════════════
   const renderInsights = () => {
+    const ccy = CURRENCY[profile.country].symbol;
     const total = pantry.reduce((a,i)=>a+(i.price||0),0);
-    const cats: Record<string,number> = {};
-    pantry.forEach(i=>{ cats[i.cat]=(cats[i.cat]||0)+(i.price||0); });
+
+    // Compute last-7-day used/wasted from cookLog + (inferred: no wasted log, so estimate zero for now)
+    const now = Date.now();
+    const dayMs = 86400000;
+    const days: { day:string; used:number; wasted:number }[] = [];
+    for (let i=6; i>=0; i--) {
+      const ts = now - i*dayMs;
+      const d  = new Date(ts);
+      const dayKey = d.toISOString().slice(0,10);
+      const label = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+      const cooked = cookLog.filter(l=>l.date.slice(0,10)===dayKey);
+      // Each meal ≈ ₹180 value used as a placeholder (no real per-meal cost captured yet)
+      const used = cooked.length * 180;
+      days.push({ day: label, used, wasted: 0 });
+    }
+    const weekUsed   = days.reduce((s,d)=>s+d.used,0);
+    const weekWasted = days.reduce((s,d)=>s+d.wasted,0);
+    const efficiency = weekUsed+weekWasted>0 ? Math.round((weekUsed/(weekUsed+weekWasted))*100) : (cookLog.length?87:0);
+    const maxBar = Math.max(1, ...days.map(d=>d.used+d.wasted));
+
+    // Streak: consecutive days (starting today) with used>wasted
+    let streak = 0;
+    for (let i=0; i<30; i++) {
+      const ts = now - i*dayMs;
+      const dayKey = new Date(ts).toISOString().slice(0,10);
+      const cooked = cookLog.filter(l=>l.date.slice(0,10)===dayKey);
+      if (cooked.length>0) streak++; else break;
+    }
+
     return (
       <div className="screen" style={{background:'var(--cream)'}}>
-        <div style={{padding:'14px 16px 0'}}>
-          <h1 style={{fontSize:26,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>Insights</h1>
-          <p style={{fontSize:11,color:'var(--gray)',marginTop:1}}>{profile.name}&apos;s kitchen</p>
+        {/* Hero */}
+        <div style={{padding:'18px 20px 16px',background:'var(--surf)',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)'}}>INSIGHTS · THIS WEEK</div>
+          <h1 style={{fontFamily:'var(--serif)',fontSize:30,color:'var(--ink)',margin:'4px 0 0',letterSpacing:-.5,fontWeight:500,lineHeight:1.1}}>You&apos;re doing great, honestly.</h1>
         </div>
-        <div style={{padding:'12px 16px 24px'}}>
-          {/* Fridge value */}
-          <div style={{background:`linear-gradient(135deg,var(--navy),var(--navyD))`,borderRadius:20,padding:20,marginBottom:12}}>
-            <p style={{fontSize:11,color:'#E8C5A0',fontWeight:700,letterSpacing:.6}}>FRIDGE VALUE NOW</p>
-            <p style={{fontSize:34,fontWeight:900,color:'#fff',marginTop:4}}>{fmtMoney(total, profile.country)}</p>
-            <p style={{fontSize:13,color:'#F4D8C8',marginTop:3}}>worth of food in your kitchen</p>
-            <div style={{display:'flex',gap:22,marginTop:14}}>
-              {[[urgent.length,'expire today'],[pantry.filter(i=>daysLeft(i.expiry)<=3).length,'use in 3 days'],[cookLog.length,'meals cooked']].map(([v,l])=>(
-                <div key={String(l)}><div style={{fontWeight:900,fontSize:18,color:'#fff'}}>{v}</div><div style={{fontSize:10,color:'#E8C5A0'}}>{l}</div></div>
-              ))}
+
+        <div style={{padding:'16px 16px 24px'}}>
+          {/* Efficiency ring */}
+          <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:16,padding:18,marginBottom:14,display:'flex',gap:16,alignItems:'center'}}>
+            <div style={{position:'relative',width:90,height:90,flexShrink:0}}>
+              <svg width="90" height="90" style={{transform:'rotate(-90deg)'}}>
+                <circle cx="45" cy="45" r="40" stroke="var(--border)" strokeWidth="8" fill="none"/>
+                <circle cx="45" cy="45" r="40" stroke="#4A6B3A" strokeWidth="8" fill="none"
+                  strokeDasharray={2*Math.PI*40}
+                  strokeDashoffset={(2*Math.PI*40)*(1-efficiency/100)}
+                  strokeLinecap="round"/>
+              </svg>
+              <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+                <div style={{fontFamily:'var(--serif)',fontSize:26,fontWeight:500,color:'var(--ink)',lineHeight:1}}>{efficiency}</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--gray)'}}>%</div>
+              </div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)'}}>FRIDGE EFFICIENCY</div>
+              <div style={{fontFamily:'var(--serif)',fontSize:19,fontWeight:500,color:'var(--ink)',marginTop:4,letterSpacing:-.2,lineHeight:1.25}}>
+                {ccy}{weekUsed} used<br/>
+                <span style={{color:'#C94A3A'}}>{ccy}{weekWasted} wasted</span>
+              </div>
             </div>
           </div>
-          {/* Recently cooked */}
-          {cookLog.length>0&&(
-            <div className="card" style={{marginBottom:12}}>
-              <p style={{fontWeight:800,fontSize:15,color:'var(--ink)',marginBottom:12}}>Recently cooked</p>
-              {cookLog.slice(0,5).map(l=>(
-                <div key={l.id} style={{display:'flex',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
-                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>{l.name}</div><div style={{fontSize:11,color:'var(--gray)'}}>{l.period} · {new Date(l.date).toLocaleDateString()}</div></div>
-                  <span style={{fontSize:18}}>✅</span>
-                </div>
-              ))}
+
+          {/* 7-day chart */}
+          <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:16,padding:16,marginBottom:14}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)'}}>LAST 7 DAYS · {ccy}</div>
+              <div style={{display:'flex',gap:10}}>
+                <span style={{display:'flex',alignItems:'center',gap:4,fontSize:10.5,color:'var(--gray)'}}><span style={{width:8,height:8,borderRadius:2,background:'#4A6B3A'}}/>used</span>
+                <span style={{display:'flex',alignItems:'center',gap:4,fontSize:10.5,color:'var(--gray)'}}><span style={{width:8,height:8,borderRadius:2,background:'#C94A3A'}}/>wasted</span>
+              </div>
             </div>
-          )}
-          {/* Spending by category */}
-          {total>0&&(
-            <div className="card" style={{marginBottom:12}}>
-              <p style={{fontWeight:800,fontSize:15,color:'var(--ink)',marginBottom:12}}>Pantry by category</p>
-              {Object.entries(cats).map(([cat,amt])=>(
-                <div key={cat} style={{marginBottom:10}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                    <span style={{fontSize:12,color:'var(--inkM)'}}>{cat}</span>
-                    <span style={{fontSize:12,fontWeight:700,color:'var(--ink)'}}>{fmtMoney(amt, profile.country)}</span>
+            <div style={{display:'flex',alignItems:'flex-end',gap:8,height:110}}>
+              {days.map((h,idx)=>{
+                const tot = h.used + h.wasted;
+                const hTot  = (tot / maxBar) * 100;
+                const hUsed = (h.used / maxBar) * 100;
+                return (
+                  <div key={idx} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+                    <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column-reverse',borderRadius:6,overflow:'hidden'}}>
+                      <div style={{background:'#4A6B3A',height:`${hUsed}%`,minHeight:h.used?3:0}}/>
+                      <div style={{background:'#C94A3A',height:`${hTot-hUsed}%`,minHeight:h.wasted?3:0}}/>
+                    </div>
+                    <div style={{fontFamily:'var(--mono)',fontSize:9.5,color:'var(--gray)'}}>{h.day}</div>
                   </div>
-                  <div style={{height:6,background:'var(--grayL)',borderRadius:3}}>
-                    <div style={{height:6,width:`${Math.min(100,Math.round(amt/total*100))}%`,background:'var(--navy)',borderRadius:3}}/>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          )}
-          {!isPremium&&(
-            <button onClick={()=>setShowPremium(true)} style={{width:'100%',background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #C68A2E',borderRadius:16,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
-              <div style={{width:40,height:40,borderRadius:20,background:'#C68A2E',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>👑</div>
-              <div style={{textAlign:'left'}}><div style={{fontWeight:800,fontSize:14,color:'#92400E'}}>Upgrade to Premium</div><div style={{fontSize:12,color:'#B45309',marginTop:2}}>Full analytics, email sync, 7-day planning</div></div>
-            </button>
-          )}
+          </div>
+
+          {/* Grid of callouts */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <Callout label="STREAK"            big={`${streak}${streak?'🔥':''}`}                         sub="days used &gt; wasted"/>
+            <Callout label="SAVED THIS MONTH"  big={`${ccy}${Math.max(0,weekUsed*4-weekWasted*4)}`}   sub="vs typical waste" tone="fresh"/>
+            <Callout label="MOST WASTED"       big={'—'}                                               sub="no waste yet" tone="urgent"/>
+            <Callout label="FRIDGE VALUE"      big={`${ccy}${total}`}                                  sub={`${pantry.length} items tracked`}/>
+          </div>
+
+          {/* Weekly digest */}
+          <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:16,padding:16,marginTop:12}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)'}}>WEEKLY DIGEST</div>
+            <div style={{fontFamily:'var(--serif)',fontSize:17,fontWeight:500,color:'var(--ink)',marginTop:6,letterSpacing:-.2,lineHeight:1.4}}>
+              {cookLog.length>0
+                ? <>&ldquo;You cooked <span style={{color:'var(--navy)'}}>{cookLog.length} meal{cookLog.length>1?'s':''}</span> this week. Keep using what&apos;s expiring.&rdquo;</>
+                : '"Get started — log a meal this week and we’ll track your kitchen efficiency."'}
+            </div>
+            <div style={{fontSize:11.5,color:'var(--gray)',marginTop:8}}>— Sent every Sunday, 9 PM</div>
+          </div>
         </div>
       </div>
     );
   };
 
+  function Callout({label,big,sub,tone='neutral'}:{label:string;big:string;sub:string;tone?:'neutral'|'fresh'|'urgent'}) {
+    const color = tone==='fresh'?'#4A6B3A':tone==='urgent'?'#C94A3A':'var(--ink)';
+    return (
+      <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:14}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)'}}>{label}</div>
+        <div style={{fontFamily:'var(--serif)',fontSize:20,fontWeight:500,color,marginTop:4,letterSpacing:-.2,lineHeight:1.1}} dangerouslySetInnerHTML={{__html:big}}/>
+        <div style={{fontSize:11,color:'var(--gray)',marginTop:4}} dangerouslySetInnerHTML={{__html:sub}}/>
+      </div>
+    );
+  }
+
   // ════════════════════════════════════════════════
   // PROFILE SCREEN
   // ════════════════════════════════════════════════
-  const renderProfile = () => (
-    <div className="screen" style={{background:'var(--cream)'}}>
-      <div style={{padding:'14px 16px 0'}}><h1 style={{fontSize:26,fontWeight:900,color:'var(--ink)',letterSpacing:-.5}}>Profile</h1></div>
-      <div style={{padding:'12px 16px 24px'}}>
-        {isPremium?(
-          <div style={{background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'2px solid #C68A2E',borderRadius:18,padding:16,marginBottom:14}}>
-            <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <div style={{width:44,height:44,borderRadius:22,background:'linear-gradient(135deg,#C68A2E,#A57522)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>👑</div>
-              <div><p style={{fontWeight:900,fontSize:16,color:'#92400E'}}>Premium · Active</p><p style={{fontSize:12,color:'#B45309'}}>All features unlocked</p></div>
-            </div>
-            <button onClick={()=>setIsPremium(false)} style={{width:'100%',marginTop:12,background:'none',border:'1px solid #FCD34D',borderRadius:10,padding:8,fontSize:12,color:'#B45309',cursor:'pointer',fontFamily:'inherit'}}>Downgrade to free</button>
+  const [editingField, setEditingField] = useState<string|null>(null);
+  const [editingMember, setEditingMember] = useState<number|null>(null);
+
+  const renderProfile = () => {
+    const avatarInitial = (profile.name||'F').charAt(0).toUpperCase();
+    const dietLabel = profile.isVeg ? (profile.eatsEggs?'Egg-veg':'Vegetarian') : 'Everything';
+
+    const EditableRow = ({fieldKey, label, value, options}:{fieldKey:string;label:string;value:string;options?:{v:string;l:string}[]}) => {
+      const editing = editingField===fieldKey;
+      const commit = (v:string) => {
+        if (fieldKey==='name')  { const np={...profile,name:v}; setProfile(np); save({profile:np}); }
+        if (fieldKey==='city')  { const np={...profile,city:v}; setProfile(np); save({profile:np}); }
+        if (fieldKey==='diet')  {
+          const isVeg = v==='veg'||v==='egg-veg'||v==='vegan';
+          const eatsEggs = v==='egg-veg';
+          const np = {...profile,isVeg,eatsEggs};
+          setProfile(np); save({profile:np});
+        }
+        if (fieldKey==='breakfast') { const np={...profile,notifTimes:{...profile.notifTimes,breakfast:v}}; setProfile(np); save({profile:np}); }
+        if (fieldKey==='dinner')    { const np={...profile,notifTimes:{...profile.notifTimes,dinner:v}};    setProfile(np); save({profile:np}); }
+        setEditingField(null);
+      };
+      return (
+        <div style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:'var(--gray)'}}>{label}</div>
+            {editing ? (
+              options ? (
+                <select autoFocus defaultValue={value} onBlur={e=>commit(e.target.value)} onChange={e=>commit(e.target.value)} style={{marginTop:4,width:'100%',padding:'6px 0',border:'none',background:'transparent',fontSize:15,fontWeight:600,color:'var(--ink)',outline:'none',borderBottom:`1.5px solid var(--navy)`}}>
+                  {options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                </select>
+              ) : (
+                <input autoFocus defaultValue={value} onBlur={e=>commit(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')commit((e.target as HTMLInputElement).value); if(e.key==='Escape')setEditingField(null);}} style={{marginTop:4,width:'100%',padding:'6px 0',border:'none',background:'transparent',fontSize:15,fontWeight:600,color:'var(--ink)',outline:'none',borderBottom:`1.5px solid var(--navy)`}}/>
+              )
+            ) : (
+              <div style={{fontSize:15,fontWeight:700,color:'var(--ink)',marginTop:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{value||<span style={{color:'var(--gray)',fontWeight:500}}>Not set</span>}</div>
+            )}
           </div>
-        ):(
-          <button onClick={()=>setShowPremium(true)} style={{width:'100%',background:`linear-gradient(135deg,var(--navy),var(--navyD))`,border:'none',borderRadius:18,padding:16,marginBottom:14,cursor:'pointer',textAlign:'left'}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
-              <span style={{fontSize:28}}>👑</span>
-              <div><p style={{fontWeight:900,fontSize:16,color:'#fff'}}>Free Plan</p><p style={{fontSize:12,color:'#E8C5A0'}}>Upgrade to unlock all features</p></div>
+          {!editing && (
+            <button onClick={()=>setEditingField(fieldKey)} style={{background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)',fontWeight:700}}>EDIT</button>
+          )}
+        </div>
+      );
+    };
+
+    const memberPalette = ['#C94A3A','#4A6B3A','#C68A2E','#35405E','#73294A'];
+
+    return (
+      <div className="screen" style={{background:'var(--cream)'}}>
+        {/* Hero */}
+        <div style={{padding:'18px 20px 16px',background:'var(--surf)',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)'}}>ACCOUNT</div>
+          <h1 style={{fontFamily:'var(--serif)',fontSize:30,color:'var(--ink)',margin:'4px 0 0',letterSpacing:-.5,fontWeight:500,lineHeight:1.1}}>You &amp; family</h1>
+          <p style={{fontSize:12,color:'var(--gray)',marginTop:4}}>Tap any field to edit.</p>
+        </div>
+
+        <div style={{padding:'16px'}}>
+          {/* Avatar card */}
+          <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:16,padding:16,display:'flex',alignItems:'center',gap:14,marginBottom:20}}>
+            <div style={{width:54,height:54,borderRadius:54,background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--serif)',fontSize:24,fontWeight:500,color:'#fff',flexShrink:0}}>{avatarInitial}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:'var(--serif)',fontSize:20,fontWeight:500,color:'var(--ink)'}}>{profile.name||'Friend'}</div>
+              <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{profile.city} · {dietLabel}</div>
             </div>
-            <div style={{background:'linear-gradient(135deg,#C68A2E,#A57522)',borderRadius:12,padding:13,textAlign:'center',fontWeight:900,fontSize:14,color:'#fff'}}>Upgrade to Premium</div>
+          </div>
+
+          {/* Personal */}
+          <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>PERSONAL</div>
+          <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,overflow:'hidden'}}>
+            <EditableRow fieldKey="name" label="Name" value={profile.name||''}/>
+            <EditableRow fieldKey="city" label="City" value={profile.city||''}/>
+            <EditableRow fieldKey="diet" label="Diet"
+              value={profile.isVeg ? (profile.eatsEggs?'egg-veg':'veg') : 'all'}
+              options={[{v:'veg',l:'Vegetarian'},{v:'egg-veg',l:'Egg-vegetarian'},{v:'all',l:'Everything'},{v:'vegan',l:'Vegan'}]}/>
+          </div>
+
+          {/* Household */}
+          <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginTop:22,marginBottom:10}}>HOUSEHOLD · {family.length}</div>
+          <div style={{display:'grid',gap:8}}>
+            {family.map((m, idx) => {
+              const isEditing = editingMember===m.id;
+              const color = memberPalette[idx % memberPalette.length];
+              return (
+                <div key={m.id} style={{background:'var(--white)',border:`1px solid ${isEditing?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:12,transition:'border-color .15s'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:12}}>
+                    <div style={{width:40,height:40,borderRadius:40,background:color,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--serif)',color:'#fff',fontSize:16,fontWeight:500,flexShrink:0}}>{(m.name||'?').charAt(0).toUpperCase()}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      {!isEditing ? (
+                        <>
+                          <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>{m.name}</div>
+                          <div style={{fontSize:11.5,color:'var(--gray)',marginTop:2}}>{m.role} · age {m.age}</div>
+                        </>
+                      ) : (
+                        <input autoFocus value={m.name} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,name:e.target.value}:x))}
+                          style={{width:'100%',padding:'4px 0',border:'none',background:'transparent',fontSize:14,fontWeight:700,color:'var(--ink)',outline:'none',borderBottom:'1.5px solid var(--navy)'}}/>
+                      )}
+                    </div>
+                    {m.role==='Toddler'&&!isEditing&&<span style={{fontSize:10,padding:'4px 10px',borderRadius:999,background:'#FAEED1',color:'#C68A2E',fontWeight:700}}>Kid-safe</span>}
+                    <button onClick={()=>{ if(isEditing) save({family}); setEditingMember(isEditing?null:m.id); }} style={{background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)',fontWeight:700}}>{isEditing?'DONE':'EDIT'}</button>
+                  </div>
+                  {isEditing && (
+                    <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--border)',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                      <label style={{fontSize:11}}>
+                        <div style={{color:'var(--gray)',fontWeight:600,marginBottom:4}}>ROLE</div>
+                        <select value={m.role} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,role:e.target.value}:x))} style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border)',borderRadius:8,fontSize:13,fontWeight:600,color:'var(--ink)',background:'var(--surf)',fontFamily:'inherit'}}>
+                          {['Adult','Partner','Teen','Kid','Toddler'].map(r=><option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </label>
+                      <label style={{fontSize:11}}>
+                        <div style={{color:'var(--gray)',fontWeight:600,marginBottom:4}}>AGE</div>
+                        <input type="number" value={m.age} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,age:parseInt(e.target.value)||0}:x))} style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border)',borderRadius:8,fontSize:13,fontWeight:600,color:'var(--ink)',background:'var(--surf)',fontFamily:'inherit'}}/>
+                      </label>
+                      <button onClick={()=>{const nf=family.filter(x=>x.id!==m.id);setFamily(nf);save({family:nf});setEditingMember(null);}} style={{gridColumn:'1 / -1',background:'transparent',color:'#C94A3A',border:'1.5px solid #C94A3A',borderRadius:8,padding:'8px 12px',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Remove from household</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <button onClick={()=>{
+              const newId = Math.max(0, ...family.map(f=>f.id))+1;
+              const nf = [...family, {id:newId, name:'New member', role:'Adult', age:30, avatar:'👤'}];
+              setFamily(nf); save({family:nf}); setEditingMember(newId);
+            }} style={{background:'none',border:'1.5px dashed var(--border)',borderRadius:14,padding:14,fontSize:13,fontWeight:600,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit'}}>+ Add a family member</button>
+          </div>
+
+          {/* Settings */}
+          <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginTop:22,marginBottom:10}}>SETTINGS</div>
+          <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,overflow:'hidden'}}>
+            <EditableRow fieldKey="breakfast" label="Breakfast reminder" value={profile.notifTimes.breakfast}/>
+            <EditableRow fieldKey="dinner"    label="Dinner reminder"    value={profile.notifTimes.dinner}/>
+            <EditableRow fieldKey="allergies" label="Allergies &amp; dislikes" value={(profile.allergies||[]).join(', ')||'None'}/>
+            <EditableRow fieldKey="tools"     label="Kitchen tools"       value={'Stove, oven, pressure cooker'}/>
+            <EditableRow fieldKey="apps"      label="Grocery apps"        value={STORES[profile.country].slice(0,3).map(s=>s.name).join(', ')}/>
+          </div>
+
+          <div style={{marginTop:22,textAlign:'center',fontFamily:'var(--mono)',fontSize:10,color:'var(--gray)',letterSpacing:1}}>FRESHNUDGE · v1.0 · {profile.city}</div>
+
+          <button onClick={()=>{
+            if(confirm('Log out? This clears your data on this device.')) {
+              localStorage.removeItem('mise_v1');
+              window.location.reload();
+            }
+          }} style={{marginTop:16,width:'100%',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:14,padding:12,fontSize:13,fontWeight:700,color:'var(--ink)',cursor:'pointer',fontFamily:'inherit'}}>
+            Logout
           </button>
-        )}
-        {/* Country switcher */}
-        <div className="card" style={{marginBottom:14}}>
-          <p style={{fontSize:11,fontWeight:700,color:'var(--gray)',letterSpacing:.6,marginBottom:10}}>COUNTRY</p>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
-            {COUNTRIES.map(c => (
-              <button key={c.id} onClick={()=>{const np={...profile,country:c.id,city:c.cities[0]};setProfile(np);save({profile:np});}}
-                style={{background:profile.country===c.id?'#FAF2EE':'var(--white)',border:`1.5px solid ${profile.country===c.id?'var(--navy)':'var(--border)'}`,borderRadius:12,padding:'10px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',fontFamily:'inherit'}}>
-                <span style={{fontSize:20}}>{c.flag}</span>
-                <span style={{fontSize:11,fontWeight:800,color:profile.country===c.id?'var(--navy)':'var(--inkM)'}}>{c.label}</span>
-                <span style={{fontSize:9,color:'var(--gray)'}}>{CURRENCY[c.id].symbol} {CURRENCY[c.id].code}</span>
-              </button>
-            ))}
-          </div>
+          <div style={{height:24}}/>
         </div>
-        {/* Profile summary */}
-        <div className="card" style={{marginBottom:14}}>
-          {[['👤','Name',profile.name||'—'],['🥗','Diet',`${profile.isVeg?'Vegetarian':'Omnivore'}${profile.eatsEggs?' + eggs':''}`],['👨‍👩‍👧','Family',`${profile.familySize} people${profile.hasToddler?` · ${profile.toddlerName} safety ON`:''}`]].map(([ic,lb,val],i,arr)=>(
-            <div key={lb} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
-              <div style={{width:34,height:34,borderRadius:10,background:'var(--grayL)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{ic}</div>
-              <div style={{flex:1}}><div style={{fontSize:11,color:'var(--gray)'}}>{lb}</div><div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>{val}</div></div>
-            </div>
-          ))}
-        </div>
-        {/* Reset */}
-        <button onClick={()=>{ if(confirm('Reset all data and restart onboarding?')){localStorage.removeItem('mise_v1');window.location.reload();} }}
-          style={{width:'100%',background:'none',border:'1px solid #FCA5A5',borderRadius:12,padding:11,fontSize:13,color:'var(--red)',cursor:'pointer',fontFamily:'inherit'}}>
-          Reset app data
-        </button>
       </div>
-    </div>
-  );
+    );
+  };
 
   // ════════════════════════════════════════════════
   // PREMIUM MODAL
@@ -1313,7 +1567,37 @@ export default function App() {
                 <button onClick={submitType} style={{marginTop:10,background:'var(--navy)',color:'#fff',border:'none',borderRadius:14,padding:'12px 18px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',width:'100%'}}>Parse items</button>
               </div>
             )}
-            {addMode==='scan'&&(
+            {/* Pending items preview — edit qty, confirm */}
+            {pendingItems.length>0 && (
+              <div style={{marginTop:16}}>
+                <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:8}}>{pendingItems.length} ITEM{pendingItems.length>1?'S':''} DETECTED</div>
+                <div style={{display:'grid',gap:6,marginBottom:12}}>
+                  {pendingItems.map((p,idx)=>{
+                    const ccySymbol = CURRENCY[profile.country].symbol;
+                    return (
+                      <div key={idx} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--white)',border:'1px solid var(--border)',borderRadius:14}}>
+                        <span style={{fontSize:24}}>{p.emoji}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>{p.item_name}</div>
+                          {p.price?<div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>~{ccySymbol}{p.price}</div>:null}
+                        </div>
+                        <input type="number" min="0" value={p.quantity} onChange={e=>{
+                          const n = parseFloat(e.target.value)||0;
+                          setPendingItems(list=>list.map((x,i)=>i===idx?{...x,quantity:n}:x));
+                        }} style={{width:60,textAlign:'center',padding:'6px 8px',border:'1px solid var(--border)',borderRadius:8,fontFamily:'inherit',fontSize:13,fontWeight:700,background:'var(--cream)'}}/>
+                        <select value={p.unit} onChange={e=>setPendingItems(list=>list.map((x,i)=>i===idx?{...x,unit:e.target.value}:x))} style={{padding:'6px 4px',border:'1px solid var(--border)',borderRadius:8,fontFamily:'inherit',fontSize:12,background:'var(--cream)'}}>
+                          {['pcs','g','kg','ml','L','bunch','loaf','dozen','packet'].map(u=><option key={u} value={u}>{u}</option>)}
+                        </select>
+                        <button onClick={()=>setPendingItems(list=>list.filter((_,i)=>i!==idx))} style={{background:'none',border:'none',color:'var(--gray)',cursor:'pointer',fontSize:18,padding:0,lineHeight:1}}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={confirmPending} style={{width:'100%',background:'var(--navy)',color:'#fff',border:'none',borderRadius:14,padding:14,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Add {pendingItems.length} item{pendingItems.length>1?'s':''} to fridge</button>
+              </div>
+            )}
+
+            {addMode==='scan'&&!pendingItems.length&&(
               isPremium?(
                 <div style={{background:'var(--cream)',border:'1.5px dashed var(--border)',borderRadius:14,padding:24,textAlign:'center'}}>
                   <div style={{fontSize:42,marginBottom:10}}>📷</div>
@@ -1360,10 +1644,9 @@ export default function App() {
             <button onClick={()=>deleteItem(openItem.id)} title="Delete" style={{background:'none',border:'none',cursor:'pointer',color:'var(--gray)',fontSize:22,lineHeight:1,padding:4}}>🗑</button>
           </div>
           <div className="modal-body" style={{padding:'10px 22px 26px'}}>
-            {/* Striped placeholder */}
-            <div style={{height:120,borderRadius:14,position:'relative',overflow:'hidden',background:`linear-gradient(135deg,${ct.fg} 0%,${ct.fg} 33%,${ct.bg} 33%,${ct.bg} 66%,#4A6B3A 66%,#4A6B3A 100%)`,marginBottom:14}}>
-              <div style={{position:'absolute',inset:0,background:'repeating-linear-gradient(45deg,rgba(255,255,255,0.06) 0 8px,rgba(0,0,0,0.05) 8px 16px)'}}/>
-              <div style={{position:'absolute',left:10,bottom:8,background:'rgba(0,0,0,0.55)',color:'#fff',fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.4,padding:'3px 7px',borderRadius:4,textTransform:'uppercase'}}>{openItem.name}</div>
+            {/* Emoji tile */}
+            <div style={{height:120,borderRadius:14,background:ct.bg,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14,fontSize:64}}>
+              {openItem.emoji||'📦'}
             </div>
             {/* Stats */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16,paddingBottom:16,borderBottom:'1px solid var(--border)'}}>
