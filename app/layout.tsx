@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { PostHogInit } from './lib/posthog';
+import { Analytics } from '@vercel/analytics/react';
 
 export const metadata: Metadata = {
   title: 'FreshNudge — Know your fridge',
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <PostHogInit/>
         {children}
+        <Analytics/>
       </body>
     </html>
   );

@@ -1088,45 +1088,9 @@ export default function App() {
         {step==='done'&&(
           <div style={{flex:1,padding:'40px 28px',display:'flex',flexDirection:'column',justifyContent:'center'}}>
             <div style={{textAlign:'center',flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
-              {/* Hurray doodle — stick figure arms up with confetti */}
-              <div style={{animation:'drop-bounce 1s cubic-bezier(.34,1.2,.64,1) both',marginBottom:18}}>
-                <svg width="128" height="128" viewBox="0 0 128 128" fill="none" style={{display:'block'}}>
-                  {/* confetti rays */}
-                  <path d="M 10 20 L 16 26" stroke="#C94A3A" strokeWidth="2.6" strokeLinecap="round"/>
-                  <path d="M 118 20 L 112 26" stroke="#4A6B3A" strokeWidth="2.6" strokeLinecap="round"/>
-                  <path d="M 6 60 L 14 60" stroke="#C68A2E" strokeWidth="2.6" strokeLinecap="round"/>
-                  <path d="M 114 60 L 122 60" stroke="#7C6D99" strokeWidth="2.6" strokeLinecap="round"/>
-                  <circle cx="22" cy="40" r="2.4" fill="#C94A3A"/>
-                  <circle cx="108" cy="40" r="2.4" fill="#4A6B3A"/>
-                  <path d="M 30 12 L 32 8" stroke="#C68A2E" strokeWidth="2.6" strokeLinecap="round"/>
-                  <path d="M 96 12 L 98 8" stroke="#7C6D99" strokeWidth="2.6" strokeLinecap="round"/>
-                  <path d="M 48 8 L 52 4" stroke="#C94A3A" strokeWidth="2.6" strokeLinecap="round"/>
-                  <path d="M 80 8 L 76 4" stroke="#4A6B3A" strokeWidth="2.6" strokeLinecap="round"/>
-
-                  {/* arms — thrown up */}
-                  <path d="M 46 58 Q 34 46 30 34" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round" fill="none"/>
-                  <path d="M 82 58 Q 94 46 98 34" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round" fill="none"/>
-                  {/* hands */}
-                  <circle cx="30" cy="32" r="4" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.4"/>
-                  <circle cx="98" cy="32" r="4" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.4"/>
-
-                  {/* head */}
-                  <circle cx="64" cy="52" r="22" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.6"/>
-                  {/* happy eyes — closed crescents */}
-                  <path d="M 52 48 Q 55 42 58 48" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
-                  <path d="M 70 48 Q 73 42 76 48" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
-                  {/* open smile */}
-                  <path d="M 54 58 Q 64 70 74 58 Q 64 64 54 58 Z" fill="#C94A3A" stroke="#1F1A14" strokeWidth="2.2" strokeLinejoin="round"/>
-                  {/* cheeks */}
-                  <ellipse cx="46" cy="58" rx="3" ry="2" fill="#F4A7B5" opacity=".75"/>
-                  <ellipse cx="82" cy="58" rx="3" ry="2" fill="#F4A7B5" opacity=".75"/>
-
-                  {/* body */}
-                  <path d="M 64 74 L 64 100" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round"/>
-                  {/* legs */}
-                  <path d="M 64 100 L 54 118" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round"/>
-                  <path d="M 64 100 L 74 118" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round"/>
-                </svg>
+              {/* Small mono tag replaces the doodle */}
+              <div style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:2,color:'var(--navy)',marginBottom:18,animation:'fadeInDelay .6s ease-out both'}}>
+                READY TO GO
               </div>
               <h2 style={{fontFamily:'var(--serif)',fontSize:36,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,lineHeight:1.1}}>Welcome{profile.name?`, ${profile.name}`:''}<br/>— you are all set.</h2>
               <p style={{fontSize:14,color:'var(--gray)',marginTop:14,lineHeight:1.5,maxWidth:320}}>We&apos;ve seeded your fridge with a typical weeknight stash so you can see FreshNudge in action. Swap it out as you shop.</p>
@@ -2140,8 +2104,7 @@ export default function App() {
     const submitType = async () => {
       if(!typedAdd.trim()) return;
       await parseText(typedAdd);
-      setTypedAdd('');
-      setShowAdd(false);
+      // Keep sheet open so the pending-items preview shows and user can tap "Add N items"
     };
     return (
       <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)setShowAdd(false);}}>
