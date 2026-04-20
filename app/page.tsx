@@ -332,6 +332,22 @@ export default function App() {
         if(d.quota)    setQuota(d.quota);
         // Closed beta: always treat existing users as premium even if their saved profile was free
         setIsPremium(true);
+
+        // Reconcile stored pantry prices against the curated lookup table.
+        // Heals legacy inflated prices ($95 paneer, $68 milk, etc) from before the lookup shipped.
+        if (d.pantry?.length) {
+          const cc = (d.profile?.country ?? 'IN') as Country;
+          const reconciled = d.pantry.map((i: PantryItem) => {
+            const looked = priceForItem({ name: i.name, quantity: i.qty, unit: i.unit, country: cc });
+            // If we have a definitive price in the table, use it. If not, zero out any suspicious big number.
+            if (typeof looked === 'number') return { ...i, price: looked };
+            if ((i.price ?? 0) > (cc==='IN'?500:cc==='SG'?15:12)) return { ...i, price: 0 };
+            return i;
+          });
+          setPantry(reconciled);
+          // Persist the cleanup so it doesn't re-run every load
+          try { localStorage.setItem('mise_v1', JSON.stringify({ ...d, pantry: reconciled })); } catch {}
+        }
       } else {
         setProfile(p => ({ ...p, country: detectCountry() }));
       }
@@ -358,25 +374,14 @@ export default function App() {
 
   const completeOnboarding = () => {
     setOnboardingDone(true);
-    // Seed demo pantry
-    const demo: PantryItem[] = [
-      {id:uid(),name:'Spinach',  emoji:'🥬',cat:'Produce',qty:200,unit:'g',price:49, expiry:expiryDate(0),expDays:0,src:'🎙️'},
-      {id:uid(),name:'Paneer',   emoji:'🧀',cat:'Dairy',  qty:250,unit:'g',price:95, expiry:expiryDate(1),expDays:1,src:'🎙️'},
-      {id:uid(),name:'Milk',     emoji:'🥛',cat:'Dairy',  qty:1,  unit:'L',price:68, expiry:expiryDate(1),expDays:1,src:'🎙️'},
-      {id:uid(),name:'Eggs',     emoji:'🥚',cat:'Protein',qty:12, unit:'pcs',price:85,expiry:expiryDate(5),expDays:5,src:'🎙️'},
-      {id:uid(),name:'Tomatoes', emoji:'🍅',cat:'Produce',qty:4,  unit:'pcs',price:35,expiry:expiryDate(3),expDays:3,src:'🎙️'},
-      {id:uid(),name:'Banana',   emoji:'🍌',cat:'Produce',qty:4,  unit:'pcs',price:30,expiry:expiryDate(3),expDays:3,src:'🎙️'},
-      {id:uid(),name:'Oats',     emoji:'🥣',cat:'Grains', qty:500,unit:'g',price:85, expiry:expiryDate(90),expDays:90,src:'🎙️'},
-      {id:uid(),name:'Brown Rice',emoji:'🌾',cat:'Grains', qty:1,  unit:'kg',price:140,expiry:expiryDate(60),expDays:60,src:'🎙️'},
-      {id:uid(),name:'Onion',    emoji:'🧅',cat:'Produce',qty:3,  unit:'pcs',price:20,expiry:expiryDate(20),expDays:20,src:'🎙️'},
-    ];
-    setPantry(demo);
+    // New users start with an EMPTY fridge — they add their own via voice / scan / type
+    setPantry([]);
     const fam: FamilyMember[] = [
       {id:1,name:profile.name||'You',role:'Adult',age:30,avatar:'👤'},
     ];
     if(profile.hasToddler) fam.push({id:2,name:profile.toddlerName||'Little one',role:'Toddler',age:profile.toddlerAge,avatar:'👶'});
     setFamily(fam);
-    save({onboardingDone:true,profile,family:fam,pantry:demo});
+    save({onboardingDone:true,profile,family:fam,pantry:[]});
   };
 
   // ── Add items to pantry ─────────────────────────────────────────
@@ -937,10 +942,24 @@ export default function App() {
               background: notifPermission==='granted' ? '#FAF2EE' : 'var(--navy)',
               color:      notifPermission==='granted' ? 'var(--navy)' : '#fff',
               border:     notifPermission==='granted' ? '2px solid var(--navy)' : 'none',
-              borderRadius:12,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',marginBottom:20,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+              borderRadius:12,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
             }}>
               {notifPermission==='granted' ? '✓ Nudges turned on' : '🔔 Turn on nudges'}
             </button>
+            {notifPermission==='granted' && (
+              <button onClick={()=>{
+                try {
+                  new Notification('FreshNudge test 🔔', {
+                    body: 'Permissions look good. Real reminders will fire at the times below while the app is open.',
+                    icon: '/icon-192.png',
+                    tag: 'fn-test',
+                  });
+                  showToast('Test sent — check your system tray');
+                } catch { showToast('Could not fire — check browser settings'); }
+              }} style={{width:'100%',background:'transparent',color:'var(--navy)',border:'1.5px solid var(--navy)',borderRadius:12,padding:'10px',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',marginBottom:20}}>
+                🧪 Send a test nudge
+              </button>
+            )}
             {(() => {
               const MEAL_ICONS: Record<string,string> = {breakfast:'☀️',lunch:'🌤️',snack:'🍎',dinner:'🌙',tea:'🫖',latenight:'🌃'};
               const entries = Object.entries(profile.notifTimes);
@@ -1125,10 +1144,24 @@ export default function App() {
         {/* Items */}
         <div style={{padding:'0 16px 32px'}}>
           {pantry.length===0?(
-            <div style={{textAlign:'center',paddingTop:60}}>
+            <div style={{textAlign:'center',paddingTop:40,paddingBottom:20}}>
               <div style={{fontSize:44}}>🛒</div>
-              <p style={{fontFamily:'var(--serif)',fontWeight:500,fontSize:22,color:'var(--ink)',marginTop:14}}>Fridge is clear</p>
-              <p style={{fontSize:13,color:'var(--gray)',marginTop:6}}>Tap Add to log your groceries.</p>
+              <p style={{fontFamily:'var(--serif)',fontWeight:500,fontSize:22,color:'var(--ink)',marginTop:14}}>Your fridge is empty</p>
+              <p style={{fontSize:13,color:'var(--gray)',marginTop:6,maxWidth:280,margin:'6px auto 0',lineHeight:1.5}}>Add what you have to get started. Three quick ways:</p>
+              <div style={{display:'grid',gap:8,marginTop:18,maxWidth:300,marginLeft:'auto',marginRight:'auto'}}>
+                <button onClick={()=>{setAddMode('voice');setShowAdd(true);}} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:12,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                  <span style={{fontSize:22}}>🎙️</span>
+                  <div><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>Voice</div><div style={{fontSize:11,color:'var(--gray)'}}>Say &ldquo;2 tomatoes, 1L milk&rdquo;</div></div>
+                </button>
+                <button onClick={()=>{setAddMode('type');setShowAdd(true);}} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:12,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                  <span style={{fontSize:22}}>✍️</span>
+                  <div><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>Type</div><div style={{fontSize:11,color:'var(--gray)'}}>Fastest if you already have a list</div></div>
+                </button>
+                <button onClick={()=>{setAddMode('scan');setShowAdd(true);}} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:12,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                  <span style={{fontSize:22}}>📷</span>
+                  <div><div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>Scan fridge or receipt</div><div style={{fontSize:11,color:'var(--gray)'}}>Photo of shelf or grocery receipt</div></div>
+                </button>
+              </div>
             </div>
           ):fridgeFilter==='all'&&!search?(
             <>
@@ -1421,22 +1454,22 @@ export default function App() {
         </div>
 
         <div style={{padding:'14px 16px 24px'}}>
-          {/* Smart suggestions */}
-          <div style={{background:'var(--white)',border:'1px dashed var(--border)',borderRadius:14,padding:14,marginBottom:14}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)'}}>✨ SMART SUGGESTIONS</div>
-            <div style={{fontSize:13,color:'var(--ink)',marginTop:6,fontWeight:600}}>
-              {featured
-                ? `${featured.name} is running low — expires ${fmtDays(daysLeft(featured.expiry)).toLowerCase()}.`
-                : 'Everything looks stocked. Add items you need below.'}
-            </div>
-            {suggestions.length>0&&(
+          {/* Smart suggestions — only show when there's something useful to say */}
+          {suggestions.length>0 && (
+            <div style={{background:'var(--white)',border:'1px dashed var(--border)',borderRadius:14,padding:14,marginBottom:14}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)'}}>✨ SMART SUGGESTIONS</div>
+              {featured && (
+                <div style={{fontSize:13,color:'var(--ink)',marginTop:6,fontWeight:600}}>
+                  {featured.name} is running low — expires {fmtDays(daysLeft(featured.expiry)).toLowerCase()}.
+                </div>
+              )}
               <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
                 {suggestions.map(s=>(
-                  <button key={s.id} onClick={()=>addShop(s.name)} style={{background:'var(--ink)',color:'var(--surf)',border:'none',borderRadius:999,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ {s.name}</button>
+                  <button key={s.id} onClick={()=>addShop(s.name)} style={{background:'#FAF2EE',color:'var(--navy)',border:'1.5px solid var(--navy)',borderRadius:999,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ {s.name}</button>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Add */}
           <div style={{display:'flex',gap:8,marginBottom:14}}>
