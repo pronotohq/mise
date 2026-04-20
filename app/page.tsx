@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { priceForItem } from './lib/prices';
 
 // ── Types ──────────────────────────────────────────────────────────
 interface PantryItem {
@@ -1299,7 +1300,8 @@ export default function App() {
     const done  = shopList.filter(i =>  i.checked);
     const searchQueries = toBuy.map(i => i.name);
     const ccy = CURRENCY[profile.country].symbol;
-    const estTotal = toBuy.length * 50; // rough placeholder
+    // Real estimate: sum the lookup price for each item we recognise; unknown items contribute 0.
+    const estTotal = toBuy.reduce((sum, i) => sum + (priceForItem({ name: i.name, quantity: 1, unit: 'pcs', country: profile.country }) ?? 0), 0);
 
     return (
       <div className="screen" style={{background:'var(--cream)'}}>
@@ -1310,7 +1312,7 @@ export default function App() {
           <div style={{display:'flex',gap:8,marginTop:14}}>
             <FridgeStat label="TO BUY"     value={toBuy.length}/>
             <FridgeStat label="CHECKED"    value={done.length}/>
-            <FridgeStat label="EST. TOTAL" value={`~${ccy}${estTotal}`}/>
+            <FridgeStat label="EST. TOTAL" value={estTotal>0 ? `~${ccy}${Math.round(estTotal*10)/10}` : '—'}/>
           </div>
           {/* Region switcher */}
           <div style={{display:'flex',gap:6,marginTop:12,alignItems:'center'}}>
@@ -1921,20 +1923,28 @@ export default function App() {
                   {pendingItems.map((p,idx)=>{
                     const ccySymbol = CURRENCY[profile.country].symbol;
                     return (
-                      <div key={idx} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--white)',border:'1px solid var(--border)',borderRadius:14}}>
-                        <span style={{fontSize:24}}>{p.emoji}</span>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>{p.item_name}</div>
-                          {p.price?<div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>~{ccySymbol}{p.price}</div>:null}
+                      <div key={idx} style={{padding:'10px 12px',background:'var(--white)',border:'1px solid var(--border)',borderRadius:14}}>
+                        <div style={{display:'flex',alignItems:'center',gap:10}}>
+                          <span style={{fontSize:24}}>{p.emoji}</span>
+                          <div style={{flex:1,minWidth:0,fontSize:14,fontWeight:700,color:'var(--ink)'}}>{p.item_name}</div>
+                          <input type="number" min="0" value={p.quantity} onChange={e=>{
+                            const n = parseFloat(e.target.value)||0;
+                            setPendingItems(list=>list.map((x,i)=>i===idx?{...x,quantity:n}:x));
+                          }} style={{width:52,textAlign:'center',padding:'6px 8px',border:'1px solid var(--border)',borderRadius:8,fontFamily:'inherit',fontSize:13,fontWeight:700,background:'var(--cream)'}}/>
+                          <select value={p.unit} onChange={e=>setPendingItems(list=>list.map((x,i)=>i===idx?{...x,unit:e.target.value}:x))} style={{padding:'6px 4px',border:'1px solid var(--border)',borderRadius:8,fontFamily:'inherit',fontSize:12,background:'var(--cream)'}}>
+                            {['pcs','g','kg','ml','L','bunch','loaf','dozen','packet'].map(u=><option key={u} value={u}>{u}</option>)}
+                          </select>
+                          <button onClick={()=>setPendingItems(list=>list.filter((_,i)=>i!==idx))} style={{background:'none',border:'none',color:'var(--gray)',cursor:'pointer',fontSize:18,padding:0,lineHeight:1}}>×</button>
                         </div>
-                        <input type="number" min="0" value={p.quantity} onChange={e=>{
-                          const n = parseFloat(e.target.value)||0;
-                          setPendingItems(list=>list.map((x,i)=>i===idx?{...x,quantity:n}:x));
-                        }} style={{width:60,textAlign:'center',padding:'6px 8px',border:'1px solid var(--border)',borderRadius:8,fontFamily:'inherit',fontSize:13,fontWeight:700,background:'var(--cream)'}}/>
-                        <select value={p.unit} onChange={e=>setPendingItems(list=>list.map((x,i)=>i===idx?{...x,unit:e.target.value}:x))} style={{padding:'6px 4px',border:'1px solid var(--border)',borderRadius:8,fontFamily:'inherit',fontSize:12,background:'var(--cream)'}}>
-                          {['pcs','g','kg','ml','L','bunch','loaf','dozen','packet'].map(u=><option key={u} value={u}>{u}</option>)}
-                        </select>
-                        <button onClick={()=>setPendingItems(list=>list.filter((_,i)=>i!==idx))} style={{background:'none',border:'none',color:'var(--gray)',cursor:'pointer',fontSize:18,padding:0,lineHeight:1}}>×</button>
+                        <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,paddingLeft:34}}>
+                          <span style={{fontSize:11,color:'var(--gray)'}}>{ccySymbol}</span>
+                          <input type="number" min="0" step="0.01" value={p.price ?? ''} onChange={e=>{
+                            const v = e.target.value;
+                            const n = v==='' ? undefined : parseFloat(v)||0;
+                            setPendingItems(list=>list.map((x,i)=>i===idx?{...x,price:n}:x));
+                          }} placeholder="Cost (optional)" style={{flex:1,padding:'4px 8px',border:'none',borderBottom:'1px solid var(--border)',outline:'none',background:'transparent',fontFamily:'inherit',fontSize:12,color:'var(--ink)'}}/>
+                          <span style={{fontSize:10,color:'var(--gray)'}}>{p.price!=null ? 'market est.' : 'unknown — add if you\u2019d like'}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -1990,6 +2000,7 @@ export default function App() {
   // ITEM DETAIL SHEET (Butter-style — ate / wasted / edit / delete)
   // ════════════════════════════════════════════════
   const [editExpiryMode, setEditExpiryMode] = useState(false);
+  const [editCostMode, setEditCostMode] = useState(false);
   const deleteItem = (id:string) => {
     const updated = pantry.filter(i=>i.id!==id);
     setPantry(updated); save({pantry:updated});
@@ -2030,7 +2041,21 @@ export default function App() {
               </div>
               <div>
                 <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)'}}>COST</div>
-                <div style={{fontFamily:'var(--serif)',fontSize:18,fontWeight:500,color:'var(--ink)',marginTop:2}}>{ccy}{openItem.price||0}</div>
+                {editCostMode?(
+                  <input autoFocus type="number" min="0" step="0.01" defaultValue={openItem.price||''}
+                    onBlur={e=>{
+                      const n = parseFloat(e.target.value);
+                      const updated = pantry.map(i=>i.id===openItem.id?{...i,price: isNaN(n)?0:n}:i);
+                      setPantry(updated); save({pantry:updated});
+                      setEditCostMode(false);
+                    }}
+                    onKeyDown={e=>{ if(e.key==='Enter') (e.target as HTMLInputElement).blur(); if(e.key==='Escape') setEditCostMode(false); }}
+                    style={{fontFamily:'var(--serif)',fontSize:18,fontWeight:500,color:'var(--ink)',marginTop:2,width:'100%',border:'none',borderBottom:'1.5px solid var(--navy)',background:'transparent',outline:'none',padding:0}}/>
+                ):(
+                  <button onClick={()=>setEditCostMode(true)} style={{background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'var(--serif)',fontSize:18,fontWeight:500,color:'var(--ink)',marginTop:2,textAlign:'left'}}>
+                    {openItem.price&&openItem.price>0 ? `${ccy}${openItem.price}` : '—'}
+                  </button>
+                )}
               </div>
             </div>
             {/* Actions */}

@@ -2,6 +2,7 @@
 // Receives audio blob → Whisper transcription → GPT-4o item extraction
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { priceForItem, Country } from '../../lib/prices';
 
 function getOpenAIClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -44,74 +45,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ items: [], transcript: '' });
     }
 
-    const country = (dietary.country ?? 'IN') as 'IN'|'SG'|'US';
-    const currencyLabel = country === 'SG' ? 'SGD' : country === 'US' ? 'USD' : 'INR';
+    const country = (dietary.country ?? 'IN') as Country;
 
-    const priceRef: Record<typeof country, string> = {
-      IN: `Real Blinkit/BigBasket INR prices (reference — never exceed these significantly):
-- Spinach (palak) 1 bunch/200g: ₹20-40
-- Tomatoes 500g: ₹30-50
-- Onion 1kg: ₹30-50
-- Potato 1kg: ₹30-45
-- Paneer 200g: ₹80-100
-- Milk 1L: ₹60-75
-- Curd 400g: ₹60-90
-- Eggs 12pcs: ₹80-100
-- Bread 1 loaf: ₹40-60
-- Chicken 1kg: ₹200-280
-- Atta 5kg: ₹250-300
-- Rice 1kg: ₹60-120
-- Coriander 1 bunch: ₹10-20
-- Lemons 4pcs: ₹15-30
-- Capsicum 250g: ₹30-50
-- Ginger 100g: ₹15-30
-- Garlic 200g: ₹25-50`,
-      SG: `Real FairPrice/RedMart SGD prices:
-- Spinach 200g: S$2-3
-- Tomatoes 500g: S$2.50-4
-- Onion 1kg: S$2-3
-- Potato 1kg: S$2.50-4
-- Paneer 200g: S$4-6
-- Milk 1L: S$2.50-3.50
-- Yogurt 400g: S$3-5
-- Eggs 10pcs: S$3-5
-- Bread 1 loaf: S$2.50-4
-- Chicken 1kg: S$8-12
-- Rice 1kg: S$3-6
-- Lemons 4pcs: S$2-3
-- Ginger 100g: S$1-2`,
-      US: `Real US grocery USD prices:
-- Spinach 10oz (280g): $3-4
-- Tomatoes 1lb (450g): $2-3
-- Onion 3lb: $3-5
-- Potato 5lb: $4-6
-- Milk 1 gallon (3.8L): $3.50-5
-- Eggs 12pcs: $3-6
-- Bread 1 loaf: $3-5
-- Chicken breast 1lb: $5-8
-- Rice 1kg: $3-5
-- Greek yogurt 32oz: $5-7`,
-    };
-
-    // ── 2. Extract structured items with GPT-4o ──────────
+    // ── 2. Extract structured items with GPT-4o-mini (no pricing — done server-side from lookup) ──
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 900,
+      model: 'gpt-4o-mini',
+      max_tokens: 700,
       response_format: { type: 'json_object' },
       messages: [{
         role: 'system',
         content: `You extract grocery items from speech or text.
 Return a JSON object with key "items" — an array of objects:
-{ "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string, "price": number }
+{ "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }
 
-PRICE RULES (CRITICAL):
-- Currency: ${currencyLabel} (whole number). Country: ${country}.
-- Scale to the actual quantity ordered. Most household produce/dairy is cheap — never default to a high number.
-- If you are NOT highly confident of a realistic retail price, OMIT the price field entirely. Do not guess. It's better to return no price than a wrong one.
-- Never use restaurant/wholesale/imported-premium prices. Assume everyday supermarket/q-commerce.
-- Cross-check against this reference before outputting:
-${priceRef[country]}
-- If the item you computed is more than 2x the reference range, it's wrong — drop the price.
+Do NOT include a price. Pricing is handled separately.
 
 Rules:
 - item_name: preserve the name in the language spoken. If the user said "Tamatar", use "Tamatar". If they said "Tomato", use "Tomato". If they said "1 kg Tamatar", use "Tamatar". Keep regional names authentic.
@@ -150,17 +97,12 @@ Arabic: laban=Milk, bayd=Eggs, dajaj=Chicken, lahm=Meat, ruz=Rice, zayt=Oil, khu
 
     const content = JSON.parse(completion.choices[0].message.content ?? '{"items":[]}');
 
-    // Hard caps per country — if price exceeds this ceiling for a typical grocery quantity, drop it
-    // Tight per-item ceilings — dropped aggressively after user reports of $35 tomatoes / $68 milk
-    const PRICE_CEIL: Record<typeof country, number> = { IN: 300, SG: 12, US: 10 };
-    const items = (content.items ?? []).map((it: {item_name:string;price?:number;quantity?:number;unit?:string}) => {
-      if (typeof it.price === 'number') {
-        if (it.price > PRICE_CEIL[country] || it.price < 0) {
-          return { ...it, price: undefined };
-        }
-      }
-      return it;
-    });
+    // Enrich each item with a deterministic price from the curated lookup table.
+    // AI no longer estimates prices. If not in table → undefined (user can enter manually).
+    const items = (content.items ?? []).map((it: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string}) => ({
+      ...it,
+      price: priceForItem({ name: it.item_name, quantity: it.quantity ?? 1, unit: it.unit ?? 'pcs', country }),
+    }));
 
     return NextResponse.json({ items, transcript });
 
