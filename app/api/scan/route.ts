@@ -2,7 +2,8 @@
 // Receives an image (receipt, order screenshot, or fridge photo) → GPT-4o Vision extracts items
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { priceForItem, Country } from '../../lib/prices';
+import { priceForItem } from '../../lib/prices';
+import type { Country } from '../../lib/prices';
 
 function getOpenAIClient() {
   const apiKey = process.env.OPENAI_API_KEY;

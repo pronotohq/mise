@@ -14,7 +14,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kv } from '@/lib/kv';
-import webpush from 'web-push';
+// Dynamic import keeps the module out of the edge bundle analysis and is CJS-compatible
+async function getWebPush() {
+  const mod = await import('web-push');
+  // web-push is CJS; default export lives on .default in ESM interop
+  return (mod as unknown as { default: typeof import('web-push') }).default ?? mod;
+}
 
 export const runtime = 'nodejs';
 
@@ -81,6 +86,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!vPub || !vPri) {
     return NextResponse.json({ error: 'VAPID keys not configured' }, { status: 500 });
   }
+  const webpush = await getWebPush();
   webpush.setVapidDetails(vSub, vPub, vPri);
 
   const now = new Date();

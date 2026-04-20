@@ -2,7 +2,8 @@
 // Receives audio blob → Whisper transcription → GPT-4o item extraction
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { priceForItem, Country } from '../../lib/prices';
+import { priceForItem } from '../../lib/prices';
+import type { Country } from '../../lib/prices';
 
 function getOpenAIClient() {
   const apiKey = process.env.OPENAI_API_KEY;
