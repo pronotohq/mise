@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const image    = formData.get('image') as File | null;
     const dietary  = JSON.parse((formData.get('dietary') as string) ?? '{}');
+    const country  = (dietary.country ?? 'IN') as 'IN'|'SG'|'US';
+    const currencyLabel = country === 'SG' ? 'SGD' : country === 'US' ? 'USD' : 'INR';
 
     if (!image) return NextResponse.json({ error: 'No image provided' }, { status: 400 });
 
@@ -62,11 +64,15 @@ FRIDGE/SHELF PHOTO RULES (critical):
 Return JSON:
 {
   "items": [
-    { "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string }
+    { "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string, "price": number }
   ],
   "store": string | null,
   "image_type": "receipt" | "screenshot" | "fridge_photo" | "other"
 }
+
+PRICE:
+- If this is a RECEIPT or screenshot, use the ACTUAL price printed on the image (convert to ${currencyLabel} whole number if different currency).
+- If it's a FRIDGE photo, estimate realistic ${currencyLabel} retail price for that quantity at supermarket level (Blinkit/BigBasket for IN, FairPrice/RedMart for SG, US chains for US). If unsure, omit price rather than guess wildly.
 
 Rules:
 - item_name: clean title-case singular (e.g. "Fresh Spinach", "Whole Milk", "Chicken Breast")

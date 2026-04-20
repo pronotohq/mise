@@ -55,6 +55,21 @@ h1, h2 { font-family: var(--serif); font-weight: 500 !important; letter-spacing:
 .notch { width: 100px; height: 26px; background: #18181B; border-radius: 16px; }
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes drop-bounce {
+  0%   { opacity: 0; transform: translateY(-90px) rotate(-8deg); }
+  55%  { opacity: 1; transform: translateY(8px)   rotate(2deg); }
+  72%  {             transform: translateY(-5px)  rotate(-1.5deg); }
+  88%  {             transform: translateY(2px)   rotate(0.5deg); }
+  100% { opacity: 1; transform: translateY(0)     rotate(0deg); }
+}
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-2deg); }
+  50%      { transform: rotate(2deg); }
+}
+@keyframes fadeInDelay {
+  0%, 55% { opacity: 0; transform: translateY(6px); }
+  100%    { opacity: 1; transform: translateY(0); }
+}
 @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
 @keyframes cfFall { 0% { opacity: 1; transform: translateY(-10px) rotate(0deg); } 100% { opacity: 0; transform: translateY(600px) rotate(900deg); } }

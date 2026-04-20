@@ -427,6 +427,27 @@ export default function App() {
     finally { setParsing(false); }
   };
 
+  const sendToScan = async (file: File) => {
+    setParsing(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs,country:profile.country}));
+      const res  = await fetch('/api/scan', {method:'POST',body:fd});
+      const data = await res.json();
+      if (data.items?.length) {
+        setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
+          item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
+          category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+        })));
+        if (data.store) showToast(`${data.items.length} items from ${data.store}`);
+      } else {
+        showToast('No items detected — try a clearer photo');
+      }
+    } catch { showToast('Scan failed — try again'); }
+    finally { setParsing(false); }
+  };
+
   const confirmPending = () => {
     if (!pendingItems.length) return;
     // addItems expects the API shape; our pending items already conform. Inject price where provided.
@@ -548,19 +569,47 @@ export default function App() {
 
         {step==='welcome'&&(
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(180deg,var(--cream) 0%,var(--surf) 100%)'}}>
-            {/* Cute fridge icon */}
-            <div style={{width:96,height:112,borderRadius:18,background:'var(--white)',border:'2px solid var(--ink)',position:'relative',marginBottom:20,boxShadow:'0 6px 18px rgba(0,0,0,.08)'}}>
-              <div style={{position:'absolute',left:0,right:0,top:42,height:2,background:'var(--ink)'}}/>
-              <div style={{position:'absolute',left:12,top:20,width:4,height:8,borderRadius:2,background:'var(--ink)'}}/>
-              <div style={{position:'absolute',left:12,top:56,width:4,height:14,borderRadius:2,background:'var(--ink)'}}/>
-              <div style={{position:'absolute',top:-6,right:18,fontSize:18}}>🥬</div>
-              <div style={{position:'absolute',top:26,right:-10,fontSize:16}}>🍅</div>
+            {/* Cute doodle fridge — drops in on mount */}
+            <div style={{animation:'drop-bounce 1.1s cubic-bezier(.34,1.2,.64,1) both',marginBottom:18,transformOrigin:'50% 100%'}}>
+              <svg width="64" height="78" viewBox="0 0 64 78" fill="none" style={{display:'block'}}>
+                {/* body — wavy sketch outline */}
+                <path d="M 10 6 Q 10 4 12 4 L 52 4 Q 54 4 54 6 L 54 72 Q 54 74 52 74 L 12 74 Q 10 74 10 72 Z"
+                      stroke="#1F1A14" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" fill="#FFFBF5"/>
+                {/* door divider with slight squiggle */}
+                <path d="M 10 30 Q 20 31 32 30 Q 44 29 54 30" stroke="#1F1A14" strokeWidth="2" strokeLinecap="round" fill="none"/>
+                {/* handles */}
+                <path d="M 15 14 L 15 22" stroke="#1F1A14" strokeWidth="2.2" strokeLinecap="round"/>
+                <path d="M 15 40 L 15 52" stroke="#1F1A14" strokeWidth="2.2" strokeLinecap="round"/>
+                {/* little sparkle */}
+                <path d="M 44 12 L 46 14 L 48 12 L 46 10 Z" fill="#C94A3A"/>
+                <circle cx="42" cy="20" r="1.2" fill="#4A6B3A"/>
+              </svg>
             </div>
-            <div style={{fontFamily:'var(--mono)',fontSize:14,letterSpacing:3,color:'var(--navy)',marginBottom:14,fontWeight:700}}>FRESHNUDGE</div>
-            <h1 style={{fontFamily:'var(--serif)',fontSize:38,fontWeight:500,color:'var(--ink)',letterSpacing:-.6,marginBottom:14,textAlign:'center',lineHeight:1.05}}>Your smart<br/>kitchen agent.</h1>
-            <p style={{fontSize:14,color:'var(--gray)',textAlign:'center',lineHeight:1.6,marginBottom:40,maxWidth:320}}>Waste less. Eat better. FreshNudge tracks what&apos;s in your fridge, nudges you before things expire, and suggests meals using what you already have.</p>
-            <button className="btn-primary" onClick={()=>setObStep(1)} style={{background:'var(--navy)',fontSize:15,padding:16}}>Get started →</button>
-            <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginTop:20,textAlign:'center'}}>60 SECONDS · NO SIGNUP</p>
+
+            {/* Logo — bigger, display font */}
+            <h1 style={{
+              fontFamily:'"Fraunces","DM Serif Display",Georgia,serif',
+              fontSize:64, fontWeight:700, fontStyle:'italic',
+              color:'var(--ink)', letterSpacing:-2, lineHeight:.95,
+              margin:0, textAlign:'center',
+              animation:'fadeInDelay 1.2s ease-out both',
+            }}>
+              FreshNudge
+            </h1>
+
+            {/* Smaller subtitle */}
+            <p style={{
+              fontFamily:'var(--serif)', fontSize:17, color:'var(--inkM)',
+              letterSpacing:-.2, marginTop:10, marginBottom:18, textAlign:'center',
+              animation:'fadeInDelay 1.3s ease-out both',
+            }}>Your smart kitchen agent.</p>
+
+            <p style={{fontSize:13,color:'var(--gray)',textAlign:'center',lineHeight:1.55,marginBottom:32,maxWidth:300,animation:'fadeInDelay 1.4s ease-out both'}}>
+              Waste less. Eat better. We track what&apos;s in your fridge, nudge you before things expire, and suggest meals using what you have.
+            </p>
+
+            <button className="btn-primary" onClick={()=>setObStep(1)} style={{background:'var(--navy)',fontSize:15,padding:16,animation:'fadeInDelay 1.5s ease-out both'}}>Get started →</button>
+            <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginTop:18,textAlign:'center'}}>60 SECONDS · NO SIGNUP</p>
           </div>
         )}
 
@@ -731,10 +780,33 @@ export default function App() {
 
         {step==='done'&&(
           <div style={{flex:1,padding:'40px 28px',display:'flex',flexDirection:'column',justifyContent:'center'}}>
-            <div style={{textAlign:'center',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
-              <div style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:2,color:'var(--navy)',marginBottom:14}}>READY{profile.name?`, ${profile.name.toUpperCase()}`:''}</div>
+            <div style={{textAlign:'center',flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+              {/* Yipee doodle — bouncing party face */}
+              <div style={{animation:'drop-bounce 1s cubic-bezier(.34,1.2,.64,1) both',marginBottom:18}}>
+                <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{display:'block'}}>
+                  {/* face */}
+                  <circle cx="48" cy="50" r="34" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.4"/>
+                  {/* confetti sparks */}
+                  <path d="M 12 18 L 18 24" stroke="#C94A3A" strokeWidth="2.4" strokeLinecap="round"/>
+                  <path d="M 82 18 L 76 24" stroke="#4A6B3A" strokeWidth="2.4" strokeLinecap="round"/>
+                  <path d="M 8 46 L 14 46" stroke="#C68A2E" strokeWidth="2.4" strokeLinecap="round"/>
+                  <path d="M 82 46 L 88 46" stroke="#7C6D99" strokeWidth="2.4" strokeLinecap="round"/>
+                  <path d="M 20 10 L 22 6"  stroke="#C94A3A" strokeWidth="2.4" strokeLinecap="round"/>
+                  <path d="M 74 10 L 72 6"  stroke="#4A6B3A" strokeWidth="2.4" strokeLinecap="round"/>
+                  <circle cx="30" cy="14" r="1.8" fill="#C68A2E"/>
+                  <circle cx="66" cy="14" r="1.8" fill="#7C6D99"/>
+                  {/* eyes */}
+                  <path d="M 36 46 Q 38 40 42 46" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
+                  <path d="M 54 46 Q 56 40 60 46" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
+                  {/* open mouth — yipee */}
+                  <path d="M 36 58 Q 48 74 60 58 Q 48 66 36 58 Z" fill="#C94A3A" stroke="#1F1A14" strokeWidth="2.2" strokeLinejoin="round"/>
+                  {/* cheek dots */}
+                  <circle cx="28" cy="58" r="2.5" fill="#F4A7B5"/>
+                  <circle cx="68" cy="58" r="2.5" fill="#F4A7B5"/>
+                </svg>
+              </div>
               <h2 style={{fontFamily:'var(--serif)',fontSize:36,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,lineHeight:1.1}}>Welcome{profile.name?`, ${profile.name}`:''}<br/>— you are all set.</h2>
-              <p style={{fontSize:14,color:'var(--gray)',marginTop:14,lineHeight:1.5}}>We&apos;ve seeded your fridge with a typical weeknight stash so you can see FreshNudge in action. Swap it out as you shop.</p>
+              <p style={{fontSize:14,color:'var(--gray)',marginTop:14,lineHeight:1.5,maxWidth:320}}>We&apos;ve seeded your fridge with a typical weeknight stash so you can see FreshNudge in action. Swap it out as you shop.</p>
             </div>
             <button className="btn-primary" onClick={completeOnboarding} style={{fontSize:15,padding:16,marginTop:24}}>Open my fridge →</button>
           </div>
@@ -1657,21 +1729,41 @@ export default function App() {
             )}
 
             {addMode==='scan'&&!pendingItems.length&&(
-              isPremium?(
-                <div style={{background:'var(--cream)',border:'1.5px dashed var(--border)',borderRadius:14,padding:24,textAlign:'center'}}>
-                  <div style={{fontSize:42,marginBottom:10}}>📷</div>
-                  <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>Snap your groceries</div>
-                  <div style={{fontSize:12,color:'var(--gray)',marginTop:4}}>We&apos;ll recognise items &amp; quantities automatically.</div>
-                  <button onClick={()=>{parseText('2 tomato, 500g paneer, 1 bread, 6 eggs');setShowAdd(false);}} style={{marginTop:14,background:'var(--navy)',color:'#fff',border:'none',borderRadius:999,padding:'10px 18px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Take photo (demo)</button>
+              <div style={{display:'grid',gap:10}}>
+                <div style={{fontSize:12,color:'var(--gray)',marginBottom:2,lineHeight:1.5}}>
+                  Snap a receipt, a grocery-app screenshot, or open your fridge and shoot the shelf. AI identifies every item.
                 </div>
-              ):(
-                <div style={{background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'1.5px solid #FDE68A',borderRadius:14,padding:20,textAlign:'center'}}>
-                  <div style={{fontSize:34,marginBottom:8}}>👑</div>
-                  <div style={{fontFamily:'var(--serif)',fontSize:20,fontWeight:500,color:'#92400E'}}>Scan is Premium</div>
-                  <div style={{fontSize:12,color:'#A57522',marginTop:4,lineHeight:1.5}}>Unlock photo scan + email sync + 7-day meal plans.</div>
-                  <button onClick={()=>{setShowAdd(false);setShowPremium(true);}} style={{marginTop:14,background:'#C68A2E',color:'#fff',border:'none',borderRadius:999,padding:'10px 18px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Upgrade — 7-day free trial</button>
+                {/* Camera capture (mobile: opens camera directly) */}
+                <label style={{background:'var(--cream)',border:'1.5px dashed var(--border)',borderRadius:14,padding:18,display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                  <input type="file" accept="image/*" capture="environment"
+                    onChange={async e=>{const f=e.target.files?.[0]; if(f) await sendToScan(f); e.currentTarget.value='';}}
+                    style={{display:'none'}}/>
+                  <div style={{width:50,height:50,borderRadius:14,background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                      <circle cx="12" cy="13" r="4"/>
+                    </svg>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>Take photo now</div>
+                    <div style={{fontSize:11.5,color:'var(--gray)',marginTop:2}}>Opens your camera (mobile) — point at fridge or receipt</div>
+                  </div>
+                </label>
+                {/* Upload from library */}
+                <label style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:18,display:'flex',alignItems:'center',gap:14,cursor:'pointer'}}>
+                  <input type="file" accept="image/*"
+                    onChange={async e=>{const f=e.target.files?.[0]; if(f) await sendToScan(f); e.currentTarget.value='';}}
+                    style={{display:'none'}}/>
+                  <div style={{width:50,height:50,borderRadius:14,background:'var(--cream)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:22}}>🖼️</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>Upload from library</div>
+                    <div style={{fontSize:11.5,color:'var(--gray)',marginTop:2}}>Pick a receipt, order screenshot, or fridge photo</div>
+                  </div>
+                </label>
+                <div style={{fontSize:11,color:'var(--gray)',textAlign:'center',marginTop:4,lineHeight:1.5}}>
+                  Works with receipts, Blinkit/Zepto/Swiggy/Shopee/FairPrice screenshots, or a photo of your fridge shelf.
                 </div>
-              )
+              </div>
             )}
           </div>
         </div>
