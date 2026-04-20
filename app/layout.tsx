@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import { PostHogInit } from './lib/posthog';
 import { Analytics } from '@vercel/analytics/react';
+
+const CLARITY_ID = 'wekiz3oiw2';
 
 export const metadata: Metadata = {
   title: 'FreshNudge — Know your fridge',
@@ -37,6 +40,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PostHogInit/>
         {children}
         <Analytics/>
+        {/* Microsoft Clarity — session replay + heatmaps */}
+        <Script id="ms-clarity" strategy="afterInteractive">
+          {`(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window, document, "clarity", "script", "${CLARITY_ID}");`}
+        </Script>
       </body>
     </html>
   );
