@@ -651,22 +651,32 @@ export default function App() {
   }, [onboardingDone, profile.notifTimes, pantry]);
 
   // ── Pantry helpers ──────────────────────────────────────────────
+  // When an item leaves the fridge (used or wasted), auto-add it to the restock list
+  // unless it's already present (unchecked). Prevents duplicates + survives navigation.
+  const queueForRestock = (name: string, existing: {id:string;name:string;checked:boolean}[]): {id:string;name:string;checked:boolean}[] => {
+    const already = existing.some(s => s.name.toLowerCase() === name.toLowerCase() && !s.checked);
+    if (already) return existing;
+    return [...existing, { id: uid(), name, checked: false }];
+  };
+
   const markUsed=(id:string)=>{
     const item = pantry.find(i=>i.id===id);
     if(!item) return;
     setConfetti(true); setTimeout(()=>setConfetti(false),2200);
     const updated  = pantry.filter(i=>i.id!==id);
     const newUsed  = [{id:uid(),name:item.name,price:item.price||0,date:new Date().toISOString()}, ...usedLog];
-    setPantry(updated); setUsedLog(newUsed);
-    save({pantry:updated, usedLog:newUsed});
+    const newShop  = queueForRestock(item.name, shopList);
+    setPantry(updated); setUsedLog(newUsed); setShopList(newShop);
+    save({pantry:updated, usedLog:newUsed, shopList:newShop});
   };
   const markWasted=(id:string)=>{
     const item = pantry.find(i=>i.id===id);
     if(!item) return;
     const updated  = pantry.filter(i=>i.id!==id);
     const newWaste = [{id:uid(),name:item.name,price:item.price||0,date:new Date().toISOString()}, ...wasteLog];
-    setPantry(updated); setWasteLog(newWaste);
-    save({pantry:updated, wasteLog:newWaste});
+    const newShop  = queueForRestock(item.name, shopList);
+    setPantry(updated); setWasteLog(newWaste); setShopList(newShop);
+    save({pantry:updated, wasteLog:newWaste, shopList:newShop});
   };
   const applyExpiryEdit=()=>{
     if(!editExpiry) return;
@@ -707,7 +717,7 @@ export default function App() {
   const navItems = [
     {id:'fridge',  icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="5" y="3" width="14" height="18" rx="2.5"/><line x1="5" y1="11" x2="19" y2="11"/><line x1="8" y1="7" x2="8" y2="9"/><line x1="8" y1="14" x2="8" y2="17"/></svg>,label:'Fridge'},
     {id:'meals',   icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>,label:'Meals'},
-    {id:'shop',    icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>,label:'Shop'},
+    {id:'shop',    icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>,label:'Restock'},
     {id:'insights',icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,label:'Insights'},
     {id:'profile', icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,label:'Profile'},
   ];
@@ -1096,7 +1106,8 @@ export default function App() {
 
   const renderFridge = () => {
     const greet = 'WELCOME';
-    const value = pantry.reduce((s,i)=>s+(i.price||0),0);
+    const valueRaw = pantry.reduce((s,i)=>s+(i.price||0),0);
+    const value = Math.round(valueRaw * 10) / 10;
     const ccy = CURRENCY[profile.country].symbol;
     const urgentItems = urgent;
     const soonItems   = expiring;

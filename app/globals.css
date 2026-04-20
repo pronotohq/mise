@@ -54,6 +54,11 @@ h1, h2 { font-family: var(--serif); font-weight: 500 !important; letter-spacing:
 #status-bar.dark { background: var(--navy) !important; color: #fff !important; }
 .notch { width: 100px; height: 26px; background: #18181B; border-radius: 16px; }
 
+/* On real mobile devices the OS already draws a status bar + notch — hide our decorative one */
+@media (max-width: 600px) {
+  #status-bar, .notch { display: none !important; }
+}
+
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes drop-bounce {
   0%   { opacity: 0; transform: translateY(-90px) rotate(-8deg); }
