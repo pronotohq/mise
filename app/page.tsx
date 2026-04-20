@@ -284,7 +284,7 @@ export default function App() {
   };
 
   // ── Onboarding ──────────────────────────────────────────────────
-  const OB_STEPS = ['welcome','name','household','sources','cuisines','notifications','done'];
+  const OB_STEPS = ['welcome','basics','sources','cuisines','notifications','done'];
   const obPct = Math.round(((obStep+1)/OB_STEPS.length)*100);
 
   const completeOnboarding = () => {
@@ -613,19 +613,15 @@ export default function App() {
           </div>
         )}
 
-        {step==='name'&&(
-          <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What should we call you?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>Your kitchen agent likes to be personal.</p>
-            <input type="text" value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
-              placeholder="Your first name" style={{width:'100%',marginBottom:4,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
-          </div>
-        )}
-
-        {step==='household'&&(
+        {step==='basics'&&(
           <div style={{flex:1,padding:'28px 22px',overflowY:'auto'}}>
-            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>Your Household</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Tell us about your home — we&apos;ll tailor portions, spices and serving style.</p>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>What should we call you?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:16}}>Your kitchen agent likes to be personal.</p>
+            <input type="text" value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
+              placeholder="Your first name" style={{width:'100%',marginBottom:26,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
+
+            <h3 style={{fontSize:22,fontWeight:500,color:'var(--ink)',letterSpacing:-.3,marginBottom:4,fontFamily:'var(--serif)'}}>Your Household</h3>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Tell us about your home — we&apos;ll tailor portions, spices and serving style.</p>
             <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>FAMILY SIZE</p>
             <div style={{display:'flex',gap:8,marginBottom:22}}>
               {[1,2,3,4,'5+'].map(n=>{
