@@ -816,7 +816,7 @@ export default function App() {
               marginTop:16,marginBottom:30,maxWidth:320,
               animation:'fadeInDelay 1.4s ease-out both',
             }}>
-              Waste less. Eat better. We track what&apos;s in your fridge, nudge you before things expire, and suggest meals using what you have.
+              Your fridge. Always tracked. Never wasted. We nudge you before things expire and suggest meals using what you have.
             </p>
 
             <button className="btn-primary" onClick={()=>setObStep(1)} style={{background:'var(--navy)',fontSize:15,padding:16,animation:'fadeInDelay 1.5s ease-out both'}}>Get started →</button>

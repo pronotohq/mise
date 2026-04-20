@@ -3,7 +3,7 @@ import './globals.css';
 import { PostHogInit } from './lib/posthog';
 
 export const metadata: Metadata = {
-  title: 'FreshNudge — your smart kitchen agent',
+  title: 'FreshNudge — Know your fridge',
   description: 'Fridge tracking + meal suggestions. Never wonder what to cook again.',
   manifest: '/manifest.json',
   appleWebApp: {
