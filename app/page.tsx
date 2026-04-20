@@ -1449,6 +1449,8 @@ export default function App() {
   // ════════════════════════════════════════════════
   const [editingField, setEditingField] = useState<string|null>(null);
   const [editingMember, setEditingMember] = useState<number|null>(null);
+  const [addingMember, setAddingMember] = useState(false);
+  const [newMember, setNewMember] = useState<{name:string;age:number}>({name:'',age:0});
 
   const renderProfile = () => {
     const avatarInitial = (profile.name||'F').charAt(0).toUpperCase();
@@ -1525,51 +1527,86 @@ export default function App() {
 
           {/* Household */}
           <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginTop:22,marginBottom:10}}>HOUSEHOLD · {family.length}</div>
-          <div style={{display:'grid',gap:8}}>
+          <div style={{display:'grid',gap:10}}>
             {family.map((m, idx) => {
               const isEditing = editingMember===m.id;
               const color = memberPalette[idx % memberPalette.length];
+              const kidSafe = (m.age ?? 30) < 5;
               return (
-                <div key={m.id} style={{background:'var(--white)',border:`1px solid ${isEditing?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:12,transition:'border-color .15s'}}>
+                <div key={m.id} style={{background:'var(--white)',border:`1px solid ${isEditing?'var(--navy)':'var(--border)'}`,borderRadius:16,padding:14,transition:'border-color .15s'}}>
                   <div style={{display:'flex',alignItems:'center',gap:12}}>
-                    <div style={{width:40,height:40,borderRadius:40,background:color,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--serif)',color:'#fff',fontSize:16,fontWeight:500,flexShrink:0}}>{(m.name||'?').charAt(0).toUpperCase()}</div>
+                    <div style={{width:44,height:44,borderRadius:44,background:color,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--serif)',color:'#fff',fontSize:18,fontWeight:500,flexShrink:0}}>{(m.name||'?').charAt(0).toUpperCase()}</div>
                     <div style={{flex:1,minWidth:0}}>
-                      {!isEditing ? (
-                        <>
-                          <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>{m.name}</div>
-                          <div style={{fontSize:11.5,color:'var(--gray)',marginTop:2}}>{m.role} · age {m.age}</div>
-                        </>
-                      ) : (
-                        <input autoFocus value={m.name} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,name:e.target.value}:x))}
-                          style={{width:'100%',padding:'4px 0',border:'none',background:'transparent',fontSize:14,fontWeight:700,color:'var(--ink)',outline:'none',borderBottom:'1.5px solid var(--navy)'}}/>
-                      )}
+                      <div style={{fontSize:15,fontWeight:700,color:'var(--ink)'}}>{m.name||'Unnamed'}</div>
+                      <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Age {m.age||'—'}{kidSafe?' · kid-safe meals':''}</div>
                     </div>
-                    {m.role==='Toddler'&&!isEditing&&<span style={{fontSize:10,padding:'4px 10px',borderRadius:999,background:'#FAEED1',color:'#C68A2E',fontWeight:700}}>Kid-safe</span>}
-                    <button onClick={()=>{ if(isEditing) save({family}); setEditingMember(isEditing?null:m.id); }} style={{background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)',fontWeight:700}}>{isEditing?'DONE':'EDIT'}</button>
+                    {!isEditing&&family.length>1&&(
+                      <button onClick={()=>setEditingMember(m.id)} style={{background:'transparent',border:'1px solid var(--border)',borderRadius:999,padding:'6px 12px',cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)',fontWeight:700}}>EDIT</button>
+                    )}
+                    {!isEditing&&family.length===1&&(
+                      <button onClick={()=>setEditingMember(m.id)} style={{background:'transparent',border:'1px solid var(--border)',borderRadius:999,padding:'6px 12px',cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)',fontWeight:700}}>EDIT</button>
+                    )}
                   </div>
                   {isEditing && (
-                    <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--border)',display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                      <label style={{fontSize:11}}>
-                        <div style={{color:'var(--gray)',fontWeight:600,marginBottom:4}}>ROLE</div>
-                        <select value={m.role} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,role:e.target.value}:x))} style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border)',borderRadius:8,fontSize:13,fontWeight:600,color:'var(--ink)',background:'var(--surf)',fontFamily:'inherit'}}>
-                          {['Adult','Partner','Teen','Kid','Toddler'].map(r=><option key={r} value={r}>{r}</option>)}
-                        </select>
-                      </label>
-                      <label style={{fontSize:11}}>
-                        <div style={{color:'var(--gray)',fontWeight:600,marginBottom:4}}>AGE</div>
-                        <input type="number" value={m.age} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,age:parseInt(e.target.value)||0}:x))} style={{width:'100%',padding:'8px 10px',border:'1px solid var(--border)',borderRadius:8,fontSize:13,fontWeight:600,color:'var(--ink)',background:'var(--surf)',fontFamily:'inherit'}}/>
-                      </label>
-                      <button onClick={()=>{const nf=family.filter(x=>x.id!==m.id);setFamily(nf);save({family:nf});setEditingMember(null);}} style={{gridColumn:'1 / -1',background:'transparent',color:'#C94A3A',border:'1.5px solid #C94A3A',borderRadius:8,padding:'8px 12px',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Remove from household</button>
+                    <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid var(--border)'}}>
+                      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10,marginBottom:10}}>
+                        <label>
+                          <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>NAME</div>
+                          <input autoFocus value={m.name} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,name:e.target.value}:x))}
+                            style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none'}}/>
+                        </label>
+                        <label>
+                          <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>AGE</div>
+                          <input type="number" min="0" max="110" value={m.age} onChange={e=>setFamily(f=>f.map(x=>x.id===m.id?{...x,age:parseInt(e.target.value)||0}:x))}
+                            style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none',textAlign:'center'}}/>
+                        </label>
+                      </div>
+                      <div style={{display:'flex',gap:8}}>
+                        <button onClick={()=>{save({family});setEditingMember(null);}} style={{flex:1,background:'var(--ink)',color:'var(--cream)',border:'none',borderRadius:10,padding:'10px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Done</button>
+                        {family.length>1&&(
+                          <button onClick={()=>{const nf=family.filter(x=>x.id!==m.id);setFamily(nf);save({family:nf});setEditingMember(null);}} style={{background:'transparent',color:'#C94A3A',border:'1.5px solid #C94A3A',borderRadius:10,padding:'10px 14px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Remove</button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               );
             })}
-            <button onClick={()=>{
-              const newId = Math.max(0, ...family.map(f=>f.id))+1;
-              const nf = [...family, {id:newId, name:'New member', role:'Adult', age:30, avatar:'👤'}];
-              setFamily(nf); save({family:nf}); setEditingMember(newId);
-            }} style={{background:'none',border:'1.5px dashed var(--border)',borderRadius:14,padding:14,fontSize:13,fontWeight:600,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit'}}>+ Add a family member</button>
+
+            {/* Add member — inline form */}
+            {addingMember ? (
+              <div style={{background:'var(--white)',border:`1px solid var(--navy)`,borderRadius:16,padding:14}}>
+                <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:10}}>NEW MEMBER</div>
+                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10,marginBottom:10}}>
+                  <label>
+                    <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>NAME</div>
+                    <input autoFocus value={newMember.name} onChange={e=>setNewMember(v=>({...v,name:e.target.value}))}
+                      placeholder="e.g. Priya" style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none'}}/>
+                  </label>
+                  <label>
+                    <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>AGE</div>
+                    <input type="number" min="0" max="110" value={newMember.age||''} onChange={e=>setNewMember(v=>({...v,age:parseInt(e.target.value)||0}))}
+                      placeholder="30" style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none',textAlign:'center'}}/>
+                  </label>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>{
+                    if(!newMember.name.trim()) return;
+                    const newId = Math.max(0, ...family.map(f=>f.id))+1;
+                    const nf = [...family, {id:newId, name:newMember.name.trim(), role:'Adult', age:newMember.age||30, avatar:'👤'}];
+                    setFamily(nf); save({family:nf});
+                    setNewMember({name:'',age:0});
+                    setAddingMember(false);
+                  }} style={{flex:1,background:'var(--navy)',color:'#fff',border:'none',borderRadius:10,padding:'10px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Save</button>
+                  <button onClick={()=>{setAddingMember(false);setNewMember({name:'',age:0});}} style={{background:'transparent',color:'var(--gray)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 14px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={()=>setAddingMember(true)} style={{background:'none',border:'1.5px dashed var(--border)',borderRadius:14,padding:14,fontSize:13,fontWeight:600,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                <svg width="14" height="14" viewBox="0 0 14 14"><line x1="7" y1="2" x2="7" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                Add a family member
+              </button>
+            )}
           </div>
 
           {/* Settings */}
