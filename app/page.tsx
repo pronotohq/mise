@@ -844,10 +844,19 @@ export default function App() {
 
         {step==='basics'&&(
           <div style={{flex:1,padding:'28px 22px',overflowY:'auto'}}>
-            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>What should we call you?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:16}}>Your kitchen agent likes to be personal.</p>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>A few quick details</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:16}}>Just so your nudges feel personal. You can change any of this later.</p>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)'}}>YOUR NAME <span style={{opacity:.6}}>(optional)</span></span>
+              {!profile.name && (
+                <button type="button" onClick={()=>setObStep(s=>s+1)}
+                  style={{background:'none',border:'none',color:'var(--navy)',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',padding:0}}>
+                  Skip →
+                </button>
+              )}
+            </div>
             <input type="text" value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
-              placeholder="Your first name" style={{width:'100%',marginBottom:26,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
+              placeholder="e.g. Priya" style={{width:'100%',marginBottom:26,border:'2px solid var(--border)',fontWeight:700,fontSize:16}}/>
 
             <h3 style={{fontSize:22,fontWeight:500,color:'var(--ink)',letterSpacing:-.3,marginBottom:4,fontFamily:'var(--serif)'}}>Your Household</h3>
             <p style={{fontSize:13,color:'var(--gray)',marginBottom:20}}>Tell us about your home — we&apos;ll tailor portions, spices and serving style.</p>
@@ -1118,8 +1127,17 @@ export default function App() {
         )}
 
         {obStep<OB_STEPS.length-1&&step!=='welcome'&&(
-          <div style={{padding:'16px 22px',paddingBottom:'max(16px,env(safe-area-inset-bottom))'}}>
-            <button className="btn-primary" onClick={()=>setObStep(s=>s+1)}>Next →</button>
+          <div style={{
+            padding:'12px 22px',
+            paddingBottom:'max(12px,env(safe-area-inset-bottom))',
+            background:'var(--bg)',
+            borderTop:'1px solid var(--border)',
+            flexShrink:0,
+            position:'sticky', bottom:0, zIndex:5,
+          }}>
+            <button className="btn-primary" onClick={()=>setObStep(s=>s+1)}>
+              {step==='basics' && !profile.name ? 'Skip for now →' : 'Next →'}
+            </button>
           </div>
         )}
       </div>
