@@ -53,7 +53,7 @@ export async function enablePushAndSync(args: SyncArgs): Promise<{ ok: boolean; 
     try {
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
       });
     } catch (err) {
       return { ok: false, reason: `Subscribe failed: ${(err as Error).message}` };
