@@ -11,8 +11,5 @@
     "app/api/inbound-email/status/route.ts":    { "maxDuration": 10 },
     "app/api/push-subscription/route.ts":       { "maxDuration": 10 },
     "app/api/cron/send-nudges/route.ts":        { "maxDuration": 60 }
-  },
-  "crons": [
-    { "path": "/api/cron/send-nudges", "schedule": "*/5 * * * *" }
-  ]
+  }
 }
