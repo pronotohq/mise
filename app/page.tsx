@@ -93,12 +93,22 @@ const SHELF: Record<string, number> = {
 };
 
 const EMOJIS: Record<string, string> = {
+  // English
   spinach:'🥬',tomato:'🍅',tomatoes:'🍅',onion:'🧅',potato:'🥔',carrot:'🥕',
-  capsicum:'🫑',cucumber:'🥒',broccoli:'🥦',banana:'🍌',mango:'🥭',apple:'🍎',
-  orange:'🍊',lemon:'🍋',milk:'🥛',paneer:'🧀',cheese:'🧀',curd:'🫙',yogurt:'🫙',
-  'greek yogurt':'🫙',butter:'🧈',ghee:'🫙',egg:'🥚',eggs:'🥚',
-  chicken:'🍗',fish:'🐟',prawn:'🦐',bread:'🍞',roti:'🫓',rice:'🌾',oats:'🥣',
-  dal:'🫘',lentil:'🫘',chana:'🫘',
+  capsicum:'🫑','bell pepper':'🫑',cucumber:'🥒',broccoli:'🥦',cauliflower:'🥦',cabbage:'🥬',
+  okra:'🥒','lady finger':'🥒',eggplant:'🍆',brinjal:'🍆',peas:'🫛',mushroom:'🍄',beans:'🫛',
+  banana:'🍌',mango:'🥭',apple:'🍎',orange:'🍊',lemon:'🍋',papaya:'🍈',grape:'🍇',strawberry:'🍓',
+  milk:'🥛',paneer:'🧀',cheese:'🧀',curd:'🫙',yogurt:'🫙','greek yogurt':'🫙',butter:'🧈',ghee:'🫙',
+  egg:'🥚',eggs:'🥚',chicken:'🍗',fish:'🐟',prawn:'🦐',shrimp:'🦐',mutton:'🥩',tofu:'🧈',
+  bread:'🍞',roti:'🫓',chapati:'🫓',paratha:'🫓',rice:'🌾',oats:'🥣',pasta:'🍝',noodles:'🍜',
+  dal:'🫘',lentil:'🫘',chana:'🫘',rajma:'🫘',atta:'🌾',flour:'🌾',sugar:'🧂',salt:'🧂',
+  tea:'🍵',coffee:'☕',honey:'🍯',oil:'🫙',
+  // Hindi / Urdu
+  bhindi:'🥒',pyaaz:'🧅',aloo:'🥔',tamatar:'🍅',gajar:'🥕',baingan:'🍆',matar:'🫛','phool gobi':'🥦','patta gobhi':'🥬',gobi:'🥦',doodh:'🥛',dahi:'🫙',anda:'🥚',murgh:'🍗',machli:'🐟',besan:'🌾',chawal:'🌾',nimbu:'🍋',kela:'🍌',seb:'🍎',aam:'🥭',santra:'🍊',adrak:'🫚',lehsun:'🧄',chai:'🍵',
+  // Tamil
+  thakkali:'🍅',vengayam:'🧅',urulaikilangu:'🥔',keerai:'🥬',paal:'🥛',thayir:'🫙',muttai:'🥚',kozhi:'🍗',meen:'🐟',poondu:'🧄',inji:'🫚',muttakose:'🥬',arisi:'🌾',paruppu:'🫘',
+  // Malay / Singlish
+  susu:'🥛',telur:'🥚',bawang:'🧅','bawang putih':'🧄',kentang:'🥔',halia:'🫚',sayur:'🥬',ikan:'🐟',ayam:'🍗',kopi:'☕',teh:'🍵',
 };
 
 const PERIODS = [
@@ -117,6 +127,14 @@ function getShelfDays(name: string): number {
 function getEmoji(name: string): string {
   const lc = name.toLowerCase();
   return Object.entries(EMOJIS).sort((a,b)=>b[0].length-a[0].length).find(([k])=>lc.includes(k))?.[1] ?? '📦';
+}
+// True if the string looks like an actual emoji character (contains non-ASCII).
+// Filters out garbage the API might send like "lady_beetle" or "cucumber-green".
+function isEmojiChar(s: unknown): s is string {
+  return typeof s === 'string' && s.length > 0 && s.length <= 8 && /[^\x00-\x7F]/.test(s);
+}
+function safeEmoji(raw: unknown, name: string): string {
+  return isEmojiChar(raw) ? raw : getEmoji(name);
 }
 function daysLeft(expiry: string): number {
   const today = new Date(); today.setHours(0,0,0,0);
@@ -505,7 +523,7 @@ export default function App() {
       if(data.items?.length) {
         setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
           item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
-          category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+          category:i.category??'Other', emoji:safeEmoji(i.emoji, i.item_name), price:i.price,
         })));
         quotaBump('voice');
       }
@@ -526,7 +544,7 @@ export default function App() {
       if(data.items?.length) {
         setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
           item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
-          category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+          category:i.category??'Other', emoji:safeEmoji(i.emoji, i.item_name), price:i.price,
         })));
         quotaBump('voice');
       }
@@ -547,7 +565,7 @@ export default function App() {
       if (data.items?.length) {
         setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
           item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
-          category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+          category:i.category??'Other', emoji:safeEmoji(i.emoji, i.item_name), price:i.price,
         })));
         quotaBump('scan');
         if (data.store) showToast(`${data.items.length} items from ${data.store}`);

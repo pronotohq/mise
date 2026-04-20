@@ -61,6 +61,11 @@ Return a JSON object with key "items" — an array of objects:
 
 Do NOT include a price. Pricing is handled separately.
 
+CRITICAL:
+- Each grocery item in the input = ONE object in the output. If the user says "bhindi", output ONE item named "Bhindi" — do NOT also add "Okra" as a second item. Never include translations or synonyms as separate entries.
+- emoji MUST be a single unicode emoji character (e.g. "🥒"). Never a description like "lady_beetle", "cucumber-green", or a word. If you don't know an appropriate emoji, use "📦".
+- item_name is a clean noun the user would recognise, NOT an English description of the emoji.
+
 Rules:
 - item_name: preserve the name in the language spoken. If the user said "Tamatar", use "Tamatar". If they said "Tomato", use "Tomato". If they said "1 kg Tamatar", use "Tamatar". Keep regional names authentic.
 - quantity: numeric. Do NOT mindlessly default to 1 piece for groceries when quantity is omitted.
@@ -98,12 +103,32 @@ Arabic: laban=Milk, bayd=Eggs, dajaj=Chicken, lahm=Meat, ruz=Rice, zayt=Oil, khu
 
     const content = JSON.parse(completion.choices[0].message.content ?? '{"items":[]}');
 
-    // Enrich each item with a deterministic price from the curated lookup table.
-    // AI no longer estimates prices. If not in table → undefined (user can enter manually).
-    const items = (content.items ?? []).map((it: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string}) => ({
-      ...it,
-      price: priceForItem({ name: it.item_name, quantity: it.quantity ?? 1, unit: it.unit ?? 'pcs', country }),
-    }));
+    // Validate emoji: must be a short string containing at least one non-ASCII (likely emoji) char.
+    // Catches GPT outputting things like "lady_beetle" or "cucumber-green" as the emoji field.
+    const isValidEmoji = (e: unknown): e is string => {
+      if (typeof e !== 'string') return false;
+      if (e.length === 0 || e.length > 8) return false;
+      // Any non-ASCII char is a fair proxy for "this is an emoji"
+      return /[^\x00-\x7F]/.test(e);
+    };
+
+    // Dedup by case-insensitive item_name — prevents "Bhindi" + "Okra" double-entries.
+    const seen = new Set<string>();
+    const raw  = (content.items ?? []) as {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string}[];
+    const items = raw.reduce<Array<{item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number}>>((acc, it) => {
+      const name = (it.item_name || '').trim();
+      if (!name) return acc;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return acc;
+      seen.add(key);
+      acc.push({
+        ...it,
+        item_name: name,
+        emoji: isValidEmoji(it.emoji) ? it.emoji : undefined,
+        price: priceForItem({ name, quantity: it.quantity ?? 1, unit: it.unit ?? 'pcs', country }),
+      });
+      return acc;
+    }, []);
 
     return NextResponse.json({ items, transcript });
 

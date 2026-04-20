@@ -93,15 +93,30 @@ If nothing identifiable: { "items": [], "store": null, "image_type": "other" }`
 
     const content = JSON.parse(response.choices[0].message.content ?? '{"items":[]}');
     const isReceipt = content.image_type === 'receipt' || content.image_type === 'screenshot';
-    const items = (content.items ?? []).map((it: {item_name:string;quantity?:number;unit?:string;price?:number;category?:string;emoji?:string}) => {
-      if (isReceipt && typeof it.price === 'number' && it.price > 0) {
-        // Receipt-printed price — trust it as-is
-        return it;
+
+    const isValidEmoji = (e: unknown): e is string => {
+      if (typeof e !== 'string') return false;
+      if (e.length === 0 || e.length > 8) return false;
+      return /[^\x00-\x7F]/.test(e);
+    };
+
+    const seen = new Set<string>();
+    const raw  = (content.items ?? []) as {item_name:string;quantity?:number;unit?:string;price?:number;category?:string;emoji?:string}[];
+    const items = raw.reduce<typeof raw>((acc, it) => {
+      const name = (it.item_name || '').trim();
+      if (!name) return acc;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return acc;
+      seen.add(key);
+      const clean = { ...it, item_name: name, emoji: isValidEmoji(it.emoji) ? it.emoji : undefined };
+      if (isReceipt && typeof clean.price === 'number' && clean.price > 0) {
+        acc.push(clean);
+      } else {
+        const looked = priceForItem({ name, quantity: it.quantity ?? 1, unit: it.unit ?? 'pcs', country: country as Country });
+        acc.push({ ...clean, price: looked });
       }
-      // Fridge-photo or no price: enrich from the curated lookup (deterministic)
-      const looked = priceForItem({ name: it.item_name, quantity: it.quantity ?? 1, unit: it.unit ?? 'pcs', country: country as Country });
-      return { ...it, price: looked };
-    });
+      return acc;
+    }, []);
     return NextResponse.json({
       items,
       store: content.store ?? null,
