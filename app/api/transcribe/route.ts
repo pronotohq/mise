@@ -45,7 +45,53 @@ export async function POST(req: NextRequest) {
     }
 
     const country = (dietary.country ?? 'IN') as 'IN'|'SG'|'US';
-    const currencyLabel = country === 'SG' ? 'SGD (Singapore dollars)' : country === 'US' ? 'USD (US dollars)' : 'INR (Indian rupees)';
+    const currencyLabel = country === 'SG' ? 'SGD' : country === 'US' ? 'USD' : 'INR';
+
+    const priceRef: Record<typeof country, string> = {
+      IN: `Real Blinkit/BigBasket INR prices (reference — never exceed these significantly):
+- Spinach (palak) 1 bunch/200g: ₹20-40
+- Tomatoes 500g: ₹30-50
+- Onion 1kg: ₹30-50
+- Potato 1kg: ₹30-45
+- Paneer 200g: ₹80-100
+- Milk 1L: ₹60-75
+- Curd 400g: ₹60-90
+- Eggs 12pcs: ₹80-100
+- Bread 1 loaf: ₹40-60
+- Chicken 1kg: ₹200-280
+- Atta 5kg: ₹250-300
+- Rice 1kg: ₹60-120
+- Coriander 1 bunch: ₹10-20
+- Lemons 4pcs: ₹15-30
+- Capsicum 250g: ₹30-50
+- Ginger 100g: ₹15-30
+- Garlic 200g: ₹25-50`,
+      SG: `Real FairPrice/RedMart SGD prices:
+- Spinach 200g: S$2-3
+- Tomatoes 500g: S$2.50-4
+- Onion 1kg: S$2-3
+- Potato 1kg: S$2.50-4
+- Paneer 200g: S$4-6
+- Milk 1L: S$2.50-3.50
+- Yogurt 400g: S$3-5
+- Eggs 10pcs: S$3-5
+- Bread 1 loaf: S$2.50-4
+- Chicken 1kg: S$8-12
+- Rice 1kg: S$3-6
+- Lemons 4pcs: S$2-3
+- Ginger 100g: S$1-2`,
+      US: `Real US grocery USD prices:
+- Spinach 10oz (280g): $3-4
+- Tomatoes 1lb (450g): $2-3
+- Onion 3lb: $3-5
+- Potato 5lb: $4-6
+- Milk 1 gallon (3.8L): $3.50-5
+- Eggs 12pcs: $3-6
+- Bread 1 loaf: $3-5
+- Chicken breast 1lb: $5-8
+- Rice 1kg: $3-5
+- Greek yogurt 32oz: $5-7`,
+    };
 
     // ── 2. Extract structured items with GPT-4o-mini ──────────
     const completion = await openai.chat.completions.create({
@@ -58,7 +104,14 @@ export async function POST(req: NextRequest) {
 Return a JSON object with key "items" — an array of objects:
 { "item_name": string, "quantity": number, "unit": string, "category": string, "emoji": string, "price": number }
 
-price: realistic current retail price (whole number, in ${currencyLabel}) for the stated quantity of this item in the user's country (${country}). Base it on typical supermarket/grocery-delivery prices — NOT restaurant prices, NOT wholesale. If you genuinely don't know, omit the price field rather than guess wildly. For Singapore use FairPrice/RedMart-level prices; for India use Blinkit/BigBasket-level; for US use typical grocery chain prices.
+PRICE RULES (CRITICAL):
+- Currency: ${currencyLabel} (whole number). Country: ${country}.
+- Scale to the actual quantity ordered. Most household produce/dairy is cheap — never default to a high number.
+- If you are NOT highly confident of a realistic retail price, OMIT the price field entirely. Do not guess. It's better to return no price than a wrong one.
+- Never use restaurant/wholesale/imported-premium prices. Assume everyday supermarket/q-commerce.
+- Cross-check against this reference before outputting:
+${priceRef[country]}
+- If the item you computed is more than 2x the reference range, it's wrong — drop the price.
 
 Rules:
 - item_name: preserve the name in the language spoken. If the user said "Tamatar", use "Tamatar". If they said "Tomato", use "Tomato". If they said "1 kg Tamatar", use "Tamatar". Keep regional names authentic.

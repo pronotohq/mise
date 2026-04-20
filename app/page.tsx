@@ -16,8 +16,10 @@ interface Meal {
   steps: string[]; notes: string;
 }
 type Country = 'IN' | 'SG' | 'US';
+type DietMode = 'veg' | 'vegan' | 'all' | 'halal';
 interface Profile {
   name: string; city: string; country: Country; isVeg: boolean; eatsEggs: boolean;
+  dietMode?: DietMode;
   hasToddler: boolean; toddlerName: string; toddlerAge: number;
   familySize: number; allergies: string[];
   notifTimes: Record<string, string>;
@@ -204,6 +206,8 @@ export default function App() {
   const [cookLog, setCookLog] = useState<CookLog[]>([]);
   const [isPremium, setIsPremium] = useState(false);
   const [shopList, setShopList] = useState<{id:string;name:string;checked:boolean}[]>([]);
+  const [usedLog,  setUsedLog]  = useState<{id:string;name:string;price:number;date:string}[]>([]);
+  const [wasteLog, setWasteLog] = useState<{id:string;name:string;price:number;date:string}[]>([]);
 
   // ── UI state ────────────────────────────────────────────────────
   const [tab, setTab] = useState('fridge');
@@ -257,6 +261,8 @@ export default function App() {
         if(d.cookLog)  setCookLog(d.cookLog);
         if(d.isPremium) setIsPremium(true);
         if(d.shopList) setShopList(d.shopList);
+        if(d.usedLog)  setUsedLog(d.usedLog);
+        if(d.wasteLog) setWasteLog(d.wasteLog);
       } else {
         setProfile(p => ({ ...p, country: detectCountry() }));
       }
@@ -264,7 +270,7 @@ export default function App() {
   },[]);
 
   // ── Save to localStorage ────────────────────────────────────────
-  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];isPremium:boolean;shopList:{id:string;name:string;checked:boolean}[]}>)=>{
+  const save = useCallback((updates: Partial<{onboardingDone:boolean;profile:Profile;family:FamilyMember[];pantry:PantryItem[];cookLog:CookLog[];isPremium:boolean;shopList:{id:string;name:string;checked:boolean}[];usedLog:{id:string;name:string;price:number;date:string}[];wasteLog:{id:string;name:string;price:number;date:string}[]}>)=>{
     try {
       const current = JSON.parse(localStorage.getItem('mise_v1')||'{}');
       localStorage.setItem('mise_v1', JSON.stringify({...current,...updates}));
@@ -382,12 +388,15 @@ export default function App() {
   };
 
   const [pendingItems, setPendingItems] = useState<{item_name:string;quantity:number;unit:string;category:string;emoji:string;price?:number}[]>([]);
+  const [parsing, setParsing] = useState(false);
 
   const sendToWhisper = async (blob: Blob) => {
+    setParsing(true);
     try {
       const fd = new FormData();
       fd.append('audio', blob, 'voice.webm');
       fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs,country:profile.country}));
+      fd.append('lang', typeof navigator!=='undefined' ? (navigator.language||'en-IN') : 'en-IN');
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
       if(data.transcript) setVoiceTranscript(data.transcript);
@@ -397,13 +406,16 @@ export default function App() {
       })));
       else showToast('Could not parse that — try again');
     } catch { showToast('Voice processing failed'); }
+    finally { setParsing(false); }
   };
 
   const parseText = async (text: string) => {
+    setParsing(true);
     try {
       const fd = new FormData();
       fd.append('text', text);
       fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs,country:profile.country}));
+      fd.append('lang', typeof navigator!=='undefined' ? (navigator.language||'en-IN') : 'en-IN');
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
       if(data.items?.length) setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
@@ -412,6 +424,7 @@ export default function App() {
       })));
       else showToast('Nothing recognised — try again');
     } catch { showToast('Parse error'); }
+    finally { setParsing(false); }
   };
 
   const confirmPending = () => {
@@ -458,13 +471,21 @@ export default function App() {
 
   // ── Pantry helpers ──────────────────────────────────────────────
   const markUsed=(id:string)=>{
+    const item = pantry.find(i=>i.id===id);
+    if(!item) return;
     setConfetti(true); setTimeout(()=>setConfetti(false),2200);
-    const updated = pantry.filter(i=>i.id!==id);
-    setPantry(updated); save({pantry:updated});
+    const updated  = pantry.filter(i=>i.id!==id);
+    const newUsed  = [{id:uid(),name:item.name,price:item.price||0,date:new Date().toISOString()}, ...usedLog];
+    setPantry(updated); setUsedLog(newUsed);
+    save({pantry:updated, usedLog:newUsed});
   };
   const markWasted=(id:string)=>{
-    const updated = pantry.filter(i=>i.id!==id);
-    setPantry(updated); save({pantry:updated});
+    const item = pantry.find(i=>i.id===id);
+    if(!item) return;
+    const updated  = pantry.filter(i=>i.id!==id);
+    const newWaste = [{id:uid(),name:item.name,price:item.price||0,date:new Date().toISOString()}, ...wasteLog];
+    setPantry(updated); setWasteLog(newWaste);
+    save({pantry:updated, wasteLog:newWaste});
   };
   const applyExpiryEdit=()=>{
     if(!editExpiry) return;
@@ -487,9 +508,10 @@ export default function App() {
       if(idx>=0) updated.splice(idx,1);
     });
     setPantry(updated); save({pantry:updated});
+    setMeals({}); // invalidate cached meal suggestions so the cooked meal drops off the list
     setCooking(null);
     setConfetti(true); setTimeout(()=>setConfetti(false),2200);
-    showToast(`🎉 ${cooking.name} cooked! Fridge updated.`);
+    showToast(`🎉 ${cooking.name} cooked! Hidden for 7 days.`);
     setTab('fridge');
   };
 
@@ -526,8 +548,16 @@ export default function App() {
 
         {step==='welcome'&&(
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(180deg,var(--cream) 0%,var(--surf) 100%)'}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:2,color:'var(--navy)',marginBottom:18}}>FRESHNUDGE</div>
-            <h1 style={{fontFamily:'var(--serif)',fontSize:38,fontWeight:500,color:'var(--ink)',letterSpacing:-.6,marginBottom:14,textAlign:'center',lineHeight:1.05}}>Your fridge just<br/>got smarter.</h1>
+            {/* Cute fridge icon */}
+            <div style={{width:96,height:112,borderRadius:18,background:'var(--white)',border:'2px solid var(--ink)',position:'relative',marginBottom:20,boxShadow:'0 6px 18px rgba(0,0,0,.08)'}}>
+              <div style={{position:'absolute',left:0,right:0,top:42,height:2,background:'var(--ink)'}}/>
+              <div style={{position:'absolute',left:12,top:20,width:4,height:8,borderRadius:2,background:'var(--ink)'}}/>
+              <div style={{position:'absolute',left:12,top:56,width:4,height:14,borderRadius:2,background:'var(--ink)'}}/>
+              <div style={{position:'absolute',top:-6,right:18,fontSize:18}}>🥬</div>
+              <div style={{position:'absolute',top:26,right:-10,fontSize:16}}>🍅</div>
+            </div>
+            <div style={{fontFamily:'var(--mono)',fontSize:14,letterSpacing:3,color:'var(--navy)',marginBottom:14,fontWeight:700}}>FRESHNUDGE</div>
+            <h1 style={{fontFamily:'var(--serif)',fontSize:38,fontWeight:500,color:'var(--ink)',letterSpacing:-.6,marginBottom:14,textAlign:'center',lineHeight:1.05}}>Your smart<br/>kitchen agent.</h1>
             <p style={{fontSize:14,color:'var(--gray)',textAlign:'center',lineHeight:1.6,marginBottom:40,maxWidth:320}}>Waste less. Eat better. FreshNudge tracks what&apos;s in your fridge, nudges you before things expire, and suggests meals using what you already have.</p>
             <button className="btn-primary" onClick={()=>setObStep(1)} style={{background:'var(--navy)',fontSize:15,padding:16}}>Get started →</button>
             <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginTop:20,textAlign:'center'}}>60 SECONDS · NO SIGNUP</p>
@@ -537,7 +567,7 @@ export default function App() {
         {step==='name'&&(
           <div style={{flex:1,padding:'28px 22px'}}>
             <h2 style={{fontSize:24,fontWeight:900,color:'var(--ink)',letterSpacing:-.5,marginBottom:6}}>What should we call you?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>So your nudges feel personal, not robotic.</p>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:28}}>Your kitchen agent likes to be personal.</p>
             <input type="text" value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}
               placeholder="Your first name" style={{width:'100%',marginBottom:4,border:'2px solid var(--navy)',fontWeight:700,fontSize:16}}/>
           </div>
@@ -545,8 +575,8 @@ export default function App() {
 
         {step==='household'&&(
           <div style={{flex:1,padding:'28px 22px',overflowY:'auto'}}>
-            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>Who&apos;s at the table?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Portion sizes &amp; diet preferences adapt to your household.</p>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>Your Household</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22}}>Tell us about your home — we&apos;ll tailor portions, spices and serving style.</p>
             <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>FAMILY SIZE</p>
             <div style={{display:'flex',gap:8,marginBottom:22}}>
               {[1,2,3,4,'5+'].map(n=>{
@@ -591,24 +621,27 @@ export default function App() {
             <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginTop:18,marginBottom:10}}>DIET</p>
             <div style={{display:'grid',gap:8,marginBottom:10}}>
               {[
-                {id:'veg'   as const, t:'Vegetarian',  s:'No meat or seafood'},
-                {id:'vegan' as const, t:'Vegan',       s:'Plant-based only'},
-                {id:'all'   as const, t:'Everything',  s:'No restrictions'},
-                {id:'halal' as const, t:'Halal',       s:'No pork'},
+                {id:'veg'   as DietMode, t:'Vegetarian',  s:'No meat or seafood'},
+                {id:'vegan' as DietMode, t:'Vegan',       s:'Plant-based only'},
+                {id:'all'   as DietMode, t:'Everything',  s:'No restrictions'},
+                {id:'halal' as DietMode, t:'Halal',       s:'No pork'},
               ].map(o=>{
-                const isVeg = o.id==='veg'||o.id==='vegan';
-                const active = (profile.isVeg===isVeg) && ((o.id==='veg'&&!profile.eatsEggs===false)||(o.id!=='veg'));
-                const mark = profile.isVeg===isVeg;
+                const active = (profile.dietMode||'veg')===o.id;
                 return (
-                  <div key={o.id} onClick={()=>setProfile(p=>({...p,isVeg}))}
-                    style={{background:mark?'var(--ink)':'var(--white)',border:`1.5px solid ${mark?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
-                    <div style={{fontSize:14,fontWeight:700,color:mark?'var(--cream)':'var(--ink)'}}>{o.t}</div>
-                    <div style={{fontSize:12,color:mark?'var(--cream)':'var(--gray)',opacity:mark?.75:1,marginTop:2}}>{o.s}</div>
+                  <div key={o.id} onClick={()=>setProfile(p=>({
+                    ...p,
+                    dietMode: o.id,
+                    isVeg: o.id==='veg'||o.id==='vegan',
+                    eatsEggs: o.id==='veg' ? p.eatsEggs : (o.id==='vegan' ? false : p.eatsEggs),
+                  }))}
+                    style={{background:active?'var(--ink)':'var(--white)',border:`1.5px solid ${active?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:active?'var(--cream)':'var(--ink)'}}>{o.t}</div>
+                    <div style={{fontSize:12,color:active?'var(--cream)':'var(--gray)',opacity:active?.75:1,marginTop:2}}>{o.s}</div>
                   </div>
                 );
               })}
             </div>
-            {profile.isVeg&&(
+            {(profile.dietMode||'veg')==='veg'&&(
               <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:14,marginTop:6}}>
                 <p style={{fontSize:12,color:'var(--gray)',marginBottom:10}}>Do you eat eggs?</p>
                 <div style={{display:'flex',gap:8}}>
@@ -658,7 +691,7 @@ export default function App() {
 
         {step==='cuisines'&&(
           <div style={{flex:1,padding:'28px 22px',overflowY:'auto'}}>
-            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>What do you usually cook?</h2>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>What do you usually eat?</h2>
             <p style={{fontSize:13,color:'var(--gray)',marginBottom:22,lineHeight:1.5}}>Pick all that apply — your meal suggestions will match your actual cooking style. Even 1 is enough.</p>
             <div style={{display:'grid',gap:10}}>
               {CUISINES.map(c=>{
@@ -1083,6 +1116,16 @@ export default function App() {
             <FridgeStat label="CHECKED"    value={done.length}/>
             <FridgeStat label="EST. TOTAL" value={`~${ccy}${estTotal}`}/>
           </div>
+          {/* Region switcher */}
+          <div style={{display:'flex',gap:6,marginTop:12,alignItems:'center'}}>
+            <span style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:1,color:'var(--gray)'}}>REGION</span>
+            {COUNTRIES.map(c=>(
+              <button key={c.id} onClick={()=>{const np={...profile,country:c.id,city:c.cities[0]};setProfile(np);save({profile:np});}}
+                style={{background:profile.country===c.id?'var(--ink)':'var(--white)',color:profile.country===c.id?'var(--cream)':'var(--ink)',border:`1px solid ${profile.country===c.id?'var(--ink)':'var(--border)'}`,borderRadius:999,padding:'4px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:4}}>
+                <span>{c.flag}</span>{c.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{padding:'14px 16px 24px'}}>
@@ -1150,7 +1193,7 @@ export default function App() {
 
           {/* Store deep-links */}
           <div style={{marginTop:18}}>
-            <p style={{fontWeight:800,fontSize:11,color:'var(--gray)',letterSpacing:.6,marginBottom:10}}>ORDER VIA {country.label.toUpperCase()} APPS</p>
+            <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:10}}>ORDER FROM {country.label.toUpperCase()}</p>
             <p style={{fontSize:11,color:'var(--gray)',marginBottom:10,lineHeight:1.5}}>
               {toBuy.length>0
                 ? `Opens ${toBuy.length} search tab${toBuy.length===1?'':'s'} — one per item.`
@@ -1201,7 +1244,6 @@ export default function App() {
     const ccy = CURRENCY[profile.country].symbol;
     const total = pantry.reduce((a,i)=>a+(i.price||0),0);
 
-    // Compute last-7-day used/wasted from cookLog + (inferred: no wasted log, so estimate zero for now)
     const now = Date.now();
     const dayMs = 86400000;
     const days: { day:string; used:number; wasted:number }[] = [];
@@ -1210,24 +1252,35 @@ export default function App() {
       const d  = new Date(ts);
       const dayKey = d.toISOString().slice(0,10);
       const label = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
-      const cooked = cookLog.filter(l=>l.date.slice(0,10)===dayKey);
-      // Each meal ≈ ₹180 value used as a placeholder (no real per-meal cost captured yet)
-      const used = cooked.length * 180;
-      days.push({ day: label, used, wasted: 0 });
+      const dayUsed   = usedLog.filter(l=>l.date.slice(0,10)===dayKey).reduce((s,l)=>s+(l.price||0),0);
+      const dayWasted = wasteLog.filter(l=>l.date.slice(0,10)===dayKey).reduce((s,l)=>s+(l.price||0),0);
+      days.push({ day: label, used: dayUsed, wasted: dayWasted });
     }
     const weekUsed   = days.reduce((s,d)=>s+d.used,0);
     const weekWasted = days.reduce((s,d)=>s+d.wasted,0);
-    const efficiency = weekUsed+weekWasted>0 ? Math.round((weekUsed/(weekUsed+weekWasted))*100) : (cookLog.length?87:0);
+    const efficiency = weekUsed+weekWasted>0 ? Math.round((weekUsed/(weekUsed+weekWasted))*100) : 0;
     const maxBar = Math.max(1, ...days.map(d=>d.used+d.wasted));
 
-    // Streak: consecutive days (starting today) with used>wasted
+    // Streak: consecutive days (starting today) where used > wasted
     let streak = 0;
-    for (let i=0; i<30; i++) {
+    for (let i=0; i<60; i++) {
       const ts = now - i*dayMs;
       const dayKey = new Date(ts).toISOString().slice(0,10);
-      const cooked = cookLog.filter(l=>l.date.slice(0,10)===dayKey);
-      if (cooked.length>0) streak++; else break;
+      const u = usedLog.filter(l=>l.date.slice(0,10)===dayKey).reduce((s,l)=>s+(l.price||0),0);
+      const w = wasteLog.filter(l=>l.date.slice(0,10)===dayKey).reduce((s,l)=>s+(l.price||0),0);
+      if (u>w && (u>0||w>0)) streak++;
+      else if (u===0&&w===0 && i===0) continue;
+      else break;
     }
+
+    // Saved this month = used total (last 30 days)
+    const monthAgo = now - 30*dayMs;
+    const savedMonth = usedLog.filter(l=>new Date(l.date).getTime()>=monthAgo).reduce((s,l)=>s+(l.price||0),0);
+
+    // Most wasted: top item name by frequency in wasteLog
+    const wasteCounts: Record<string,number> = {};
+    wasteLog.forEach(l=>{ wasteCounts[l.name]=(wasteCounts[l.name]||0)+1; });
+    const mostWasted = Object.entries(wasteCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] ?? '—';
 
     return (
       <div className="screen" style={{background:'var(--cream)'}}>
@@ -1291,10 +1344,10 @@ export default function App() {
 
           {/* Grid of callouts */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <Callout label="STREAK"            big={`${streak}${streak?'🔥':''}`}                         sub="days used &gt; wasted"/>
-            <Callout label="SAVED THIS MONTH"  big={`${ccy}${Math.max(0,weekUsed*4-weekWasted*4)}`}   sub="vs typical waste" tone="fresh"/>
-            <Callout label="MOST WASTED"       big={'—'}                                               sub="no waste yet" tone="urgent"/>
-            <Callout label="FRIDGE VALUE"      big={`${ccy}${total}`}                                  sub={`${pantry.length} items tracked`}/>
+            <Callout label="STREAK"            big={`${streak}${streak?'🔥':''}`}              sub="days used &gt; wasted"/>
+            <Callout label="SAVED THIS MONTH"  big={`${ccy}${savedMonth}`}                     sub="food actually used" tone="fresh"/>
+            <Callout label="MOST WASTED"       big={mostWasted}                                sub={mostWasted==='—'?'no waste yet':'try smaller bunches'} tone="urgent"/>
+            <Callout label="FRIDGE VALUE"      big={`${ccy}${total}`}                          sub={`${pantry.length} items tracked`}/>
           </div>
 
           {/* Weekly digest */}
@@ -1457,8 +1510,6 @@ export default function App() {
             <EditableRow fieldKey="breakfast" label="Breakfast reminder" value={profile.notifTimes.breakfast}/>
             <EditableRow fieldKey="dinner"    label="Dinner reminder"    value={profile.notifTimes.dinner}/>
             <EditableRow fieldKey="allergies" label="Allergies &amp; dislikes" value={(profile.allergies||[]).join(', ')||'None'}/>
-            <EditableRow fieldKey="tools"     label="Kitchen tools"       value={'Stove, oven, pressure cooker'}/>
-            <EditableRow fieldKey="apps"      label="Grocery apps"        value={STORES[profile.country].slice(0,3).map(s=>s.name).join(', ')}/>
           </div>
 
           <div style={{marginTop:22,textAlign:'center',fontFamily:'var(--mono)',fontSize:10,color:'var(--gray)',letterSpacing:1}}>FRESHNUDGE · v1.0 · {profile.city}</div>
@@ -1567,6 +1618,14 @@ export default function App() {
                 <button onClick={submitType} style={{marginTop:10,background:'var(--navy)',color:'#fff',border:'none',borderRadius:14,padding:'12px 18px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',width:'100%'}}>Parse items</button>
               </div>
             )}
+            {/* Parsing indicator */}
+            {parsing && pendingItems.length===0 && (
+              <div style={{marginTop:16,background:'var(--cream)',border:'1px solid var(--border)',borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:18,height:18,border:'2px solid var(--border)',borderTopColor:'var(--navy)',borderRadius:18,animation:'spin .8s linear infinite'}}/>
+                <div style={{fontSize:13,fontWeight:600,color:'var(--ink)'}}>Processing…</div>
+              </div>
+            )}
+
             {/* Pending items preview — edit qty, confirm */}
             {pendingItems.length>0 && (
               <div style={{marginTop:16}}>
