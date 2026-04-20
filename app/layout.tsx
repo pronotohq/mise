@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { PostHogInit } from './lib/posthog';
 
 export const metadata: Metadata = {
-  title: 'Mise — Your kitchen, always ready',
+  title: 'FreshNudge — your smart kitchen agent',
   description: 'Fridge tracking + meal suggestions. Never wonder what to cook again.',
   manifest: '/manifest.json',
   appleWebApp: {
@@ -31,7 +32,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <PostHogInit/>
+        {children}
+      </body>
     </html>
   );
 }

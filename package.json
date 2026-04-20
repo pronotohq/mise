@@ -12,6 +12,7 @@
     "react": "^18",
     "react-dom": "^18",
     "openai": "^4.52.0",
+    "posthog-js": "^1.180.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

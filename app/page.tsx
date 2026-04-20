@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { priceForItem } from './lib/prices';
 import { enablePushAndSync, resyncPrefs, getOrCreateUserId } from './lib/push-client';
+import { track, identify } from './lib/posthog';
 
 // ── Types ──────────────────────────────────────────────────────────
 interface PantryItem {
@@ -383,6 +384,15 @@ export default function App() {
     if(profile.hasToddler) fam.push({id:2,name:profile.toddlerName||'Little one',role:'Toddler',age:profile.toddlerAge,avatar:'👶'});
     setFamily(fam);
     save({onboardingDone:true,profile,family:fam,pantry:[]});
+    try {
+      const uid = getOrCreateUserId();
+      identify(uid, {
+        country: profile.country, diet: profile.dietMode || (profile.isVeg?'veg':'all'),
+        familySize: profile.familySize, hasToddler: profile.hasToddler,
+        cuisines: profile.cuisines || [],
+      });
+      track('onboarding_completed', { country: profile.country, familySize: profile.familySize });
+    } catch {}
   };
 
   // ── Add items to pantry ─────────────────────────────────────────
@@ -417,43 +427,59 @@ export default function App() {
     setRecording(true);
     setVoiceTranscript('');
 
-    // Try browser SpeechRecognition first (Chrome/Android — free, instant)
+    // Try browser SpeechRecognition first (Chrome/Android — free, instant).
+    // iOS Chrome exposes webkitSpeechRecognition but start() can throw — fall through to MediaRecorder.
     const w = window as unknown as Record<string, unknown>;
     const SR = (w['SpeechRecognition'] || w['webkitSpeechRecognition']) as (new () => {lang:string;interimResults:boolean;onresult:unknown;onerror:unknown;onend:unknown;start:()=>void}) | undefined;
-    if(SR) {
-      const rec = new SR();
-      recognitionRef.current = rec;
-      rec.lang = 'en-IN';
-      rec.interimResults = false;
-      rec.onresult = async (e: unknown) => {
-        const ev = e as {results: {[0]: {[0]: {transcript: string}}}};
-        const text = ev.results[0][0].transcript;
-        setVoiceTranscript(text);
-        setRecording(false);
-        await parseText(text);
-      };
-      rec.onerror = () => setRecording(false);
-      rec.onend   = () => setRecording(false);
-      rec.start();
-      return;
+    const isIOS = typeof navigator!=='undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (SR && !isIOS) {
+      try {
+        const rec = new SR();
+        recognitionRef.current = rec;
+        rec.lang = (typeof navigator!=='undefined' && navigator.language) || 'en-IN';
+        rec.interimResults = false;
+        rec.onresult = async (e: unknown) => {
+          const ev = e as {results: {[0]: {[0]: {transcript: string}}}};
+          const text = ev.results[0][0].transcript;
+          setVoiceTranscript(text);
+          setRecording(false);
+          await parseText(text);
+        };
+        rec.onerror = () => setRecording(false);
+        rec.onend   = () => setRecording(false);
+        rec.start();
+        return;
+      } catch {
+        // fall through to MediaRecorder
+        recognitionRef.current = null;
+      }
     }
 
     // Fallback: MediaRecorder → send to Whisper API
+    // iOS Safari/Chrome record audio/mp4, not webm. Detect supported mime + pass correct filename.
+    if (!('MediaRecorder' in window)) { setRecording(false); showToast('Voice recording not supported on this browser'); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({audio:true});
       audioChunksRef.current = [];
-      const mr = new MediaRecorder(stream);
+      const candidates = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/aac','audio/ogg'];
+      const mime = candidates.find(t => (MediaRecorder as unknown as {isTypeSupported?: (m:string)=>boolean}).isTypeSupported?.(t)) || '';
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       mediaRecorderRef.current = mr;
-      mr.ondataavailable = e => audioChunksRef.current.push(e.data);
+      mr.ondataavailable = e => { if(e.data && e.data.size > 0) audioChunksRef.current.push(e.data); };
       mr.onstop = async () => {
-        const blob = new Blob(audioChunksRef.current, {type:'audio/webm'});
+        const blobType = mr.mimeType || mime || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: blobType });
         stream.getTracks().forEach(t=>t.stop());
-        await sendToWhisper(blob);
+        const ext = blobType.includes('mp4') ? 'm4a'
+                  : blobType.includes('aac') ? 'm4a'
+                  : blobType.includes('ogg') ? 'ogg'
+                  : 'webm';
+        await sendToWhisper(blob, ext);
       };
       mr.start();
     } catch {
       setRecording(false);
-      showToast('Microphone access needed');
+      showToast('Microphone access needed — check browser settings');
     }
   };
 
@@ -466,11 +492,11 @@ export default function App() {
   const [pendingItems, setPendingItems] = useState<{item_name:string;quantity:number;unit:string;category:string;emoji:string;price?:number}[]>([]);
   const [parsing, setParsing] = useState(false);
 
-  const sendToWhisper = async (blob: Blob) => {
+  const sendToWhisper = async (blob: Blob, ext: string = 'webm') => {
     setParsing(true);
     try {
       const fd = new FormData();
-      fd.append('audio', blob, 'voice.webm');
+      fd.append('audio', blob, `voice.${ext}`);
       fd.append('dietary', JSON.stringify({isVeg:profile.isVeg,eatsEggs:profile.eatsEggs,country:profile.country}));
       fd.append('lang', typeof navigator!=='undefined' ? (navigator.language||'en-IN') : 'en-IN');
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
@@ -549,6 +575,7 @@ export default function App() {
       return updated;
     });
     showToast(`✓ Added ${pendingItems.length} item${pendingItems.length>1?'s':''}`);
+    track('items_added', { count: pendingItems.length, method: addMode });
     setPendingItems([]);
     setShowAdd(false);
   };
@@ -668,6 +695,7 @@ export default function App() {
     const newShop  = queueForRestock(item.name, shopList);
     setPantry(updated); setUsedLog(newUsed); setShopList(newShop);
     save({pantry:updated, usedLog:newUsed, shopList:newShop});
+    track('item_used', { item: item.name, cat: item.cat });
   };
   const markWasted=(id:string)=>{
     const item = pantry.find(i=>i.id===id);
@@ -677,6 +705,7 @@ export default function App() {
     const newShop  = queueForRestock(item.name, shopList);
     setPantry(updated); setWasteLog(newWaste); setShopList(newShop);
     save({pantry:updated, wasteLog:newWaste, shopList:newShop});
+    track('item_wasted', { item: item.name, cat: item.cat });
   };
   const applyExpiryEdit=()=>{
     if(!editExpiry) return;
@@ -700,6 +729,7 @@ export default function App() {
     });
     setPantry(updated); save({pantry:updated});
     setMeals({}); // invalidate cached meal suggestions so the cooked meal drops off the list
+    track('meal_cooked', { name: cooking.name, period });
     setCooking(null);
     setConfetti(true); setTimeout(()=>setConfetti(false),2200);
     showToast(`🎉 ${cooking.name} cooked! Hidden for 7 days.`);
@@ -955,6 +985,22 @@ export default function App() {
             <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)',textAlign:'center'}}>When should we nudge you?</h2>
             <p style={{fontSize:13,color:'var(--gray)',marginBottom:18,lineHeight:1.5,textAlign:'center'}}>We&apos;ll remind you before things expire and suggest what to eat. Change anytime in settings.</p>
             {/* Browser notification permission */}
+            {/* iOS hint: Safari only allows web push from an installed PWA */}
+            {(() => {
+              if (typeof navigator==='undefined') return null;
+              const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+              const nav   = navigator as Navigator & { standalone?: boolean };
+              const standalone = nav.standalone === true
+                || (typeof window!=='undefined' && window.matchMedia?.('(display-mode: standalone)').matches);
+              if (isIOS && !standalone) {
+                return (
+                  <div style={{background:'#FAF2EE',border:'1px solid var(--border)',borderRadius:12,padding:12,marginBottom:12,fontSize:12,color:'var(--inkM)',lineHeight:1.5}}>
+                    <b>On iPhone?</b> Add FreshNudge to your Home Screen first: tap the Safari <b>Share</b> icon → <b>Add to Home Screen</b>. Push notifications only work from the installed app.
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <button onClick={async ()=>{
               if (typeof Notification==='undefined') { showToast('This browser does not support notifications'); return; }
               let perm: NotificationPermission = Notification.permission;
