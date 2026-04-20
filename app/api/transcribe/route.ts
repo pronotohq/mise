@@ -151,7 +151,8 @@ Arabic: laban=Milk, bayd=Eggs, dajaj=Chicken, lahm=Meat, ruz=Rice, zayt=Oil, khu
     const content = JSON.parse(completion.choices[0].message.content ?? '{"items":[]}');
 
     // Hard caps per country — if price exceeds this ceiling for a typical grocery quantity, drop it
-    const PRICE_CEIL: Record<typeof country, number> = { IN: 500, SG: 25, US: 20 };
+    // Tight per-item ceilings — dropped aggressively after user reports of $35 tomatoes / $68 milk
+    const PRICE_CEIL: Record<typeof country, number> = { IN: 300, SG: 12, US: 10 };
     const items = (content.items ?? []).map((it: {item_name:string;price?:number;quantity?:number;unit?:string}) => {
       if (typeof it.price === 'number') {
         if (it.price > PRICE_CEIL[country] || it.price < 0) {

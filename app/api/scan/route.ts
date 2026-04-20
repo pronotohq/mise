@@ -90,8 +90,17 @@ If nothing identifiable: { "items": [], "store": null, "image_type": "other" }`
     });
 
     const content = JSON.parse(response.choices[0].message.content ?? '{"items":[]}');
+    // Hard cap on AI-estimated prices for fridge photos (keep receipt prices as-is)
+    const PRICE_CEIL: Record<typeof country, number> = { IN: 300, SG: 12, US: 10 };
+    const isReceipt = content.image_type === 'receipt' || content.image_type === 'screenshot';
+    const items = (content.items ?? []).map((it: {item_name:string;price?:number}) => {
+      if (!isReceipt && typeof it.price === 'number' && (it.price > PRICE_CEIL[country] || it.price < 0)) {
+        return { ...it, price: undefined };
+      }
+      return it;
+    });
     return NextResponse.json({
-      items: content.items ?? [],
+      items,
       store: content.store ?? null,
       image_type: content.image_type ?? 'other',
     });

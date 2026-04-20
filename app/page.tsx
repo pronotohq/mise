@@ -235,6 +235,7 @@ export default function App() {
   const [newExpiryDays, setNewExpiryDays] = useState('');
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState('');
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(typeof Notification!=='undefined' ? Notification.permission : 'default');
   const recognitionRef = useRef<unknown>(null);
   const mediaRecorderRef = useRef<MediaRecorder|null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -644,25 +645,22 @@ export default function App() {
               </svg>
             </div>
 
-            {/* Logo — bigger, display font */}
+            {/* Logo — Caveat handwritten */}
             <h1 style={{
-              fontFamily:'"Fraunces","DM Serif Display",Georgia,serif',
-              fontSize:64, fontWeight:700, fontStyle:'italic',
-              color:'var(--ink)', letterSpacing:-2, lineHeight:.95,
+              fontFamily:'"Caveat","Fraunces",Georgia,cursive',
+              fontSize:82, fontWeight:700,
+              color:'var(--navy)', letterSpacing:-1, lineHeight:.9,
               margin:0, textAlign:'center',
               animation:'fadeInDelay 1.2s ease-out both',
             }}>
               FreshNudge
             </h1>
 
-            {/* Smaller subtitle */}
             <p style={{
-              fontFamily:'var(--serif)', fontSize:17, color:'var(--inkM)',
-              letterSpacing:-.2, marginTop:10, marginBottom:18, textAlign:'center',
-              animation:'fadeInDelay 1.3s ease-out both',
-            }}>Your smart kitchen agent.</p>
-
-            <p style={{fontSize:13,color:'var(--gray)',textAlign:'center',lineHeight:1.55,marginBottom:32,maxWidth:300,animation:'fadeInDelay 1.4s ease-out both'}}>
+              fontSize:14,color:'var(--gray)',textAlign:'center',lineHeight:1.6,
+              marginTop:16,marginBottom:30,maxWidth:320,
+              animation:'fadeInDelay 1.4s ease-out both',
+            }}>
               Waste less. Eat better. We track what&apos;s in your fridge, nudge you before things expire, and suggest meals using what you have.
             </p>
 
@@ -694,30 +692,21 @@ export default function App() {
               })}
             </div>
             <p style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>KIDS AT HOME?</p>
-            <div style={{display:'flex',gap:8,marginBottom:14}}>
-              {[[false,'No kids','Skip kid-safe filter'],[true,'Yes, a little one','Enable safety filter']].map(([val,lb,sub])=>{
+            <div style={{display:'flex',gap:8,marginBottom:profile.hasToddler?12:18}}>
+              {[[false,'No'],[true,'Yes']].map(([val,lb])=>{
                 const active = profile.hasToddler===val;
                 return (
-                  <div key={lb as string} onClick={()=>setProfile(p=>({...p,hasToddler:val as boolean}))}
-                    style={{flex:1,background:active?'#FAF2EE':'var(--white)',border:`2px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',cursor:'pointer',transition:'all .15s'}}>
-                    <div style={{fontSize:14,fontWeight:700,color:active?'var(--navy)':'var(--ink)'}}>{lb}</div>
-                    <div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>{sub}</div>
-                  </div>
+                  <button key={lb as string} onClick={()=>setProfile(p=>({...p,hasToddler:val as boolean}))}
+                    style={{flex:1,background:active?'#FAF2EE':'var(--white)',border:`2px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',cursor:'pointer',transition:'all .15s',fontFamily:'inherit',fontSize:14,fontWeight:700,color:active?'var(--navy)':'var(--ink)'}}>
+                    {lb as string}
+                  </button>
                 );
               })}
             </div>
             {profile.hasToddler&&(
-              <div style={{background:'var(--white)',border:`1px solid var(--border)`,borderRadius:14,padding:14,marginBottom:18}}>
-                <div style={{fontSize:12,color:'var(--gray)',marginBottom:8}}>Auto-filtered from all suggestions:</div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
-                  {['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt'].map(f=>(
-                    <span key={f} style={{fontSize:11,padding:'5px 10px',borderRadius:999,background:'var(--cream)',color:'var(--ink)',fontWeight:500}}>✕ {f}</span>
-                  ))}
-                </div>
-                <div style={{display:'flex',gap:8}}>
-                  <input type="text" placeholder="Little one's name (e.g. Avya)" value={profile.toddlerName} onChange={e=>setProfile(p=>({...p,toddlerName:e.target.value}))} style={{flex:2}}/>
-                  <input type="number" placeholder="Age" value={profile.toddlerAge||''} onChange={e=>setProfile(p=>({...p,toddlerAge:parseInt(e.target.value)||2}))} style={{flex:1,textAlign:'center'}}/>
-                </div>
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10,marginBottom:18}}>
+                <input type="text" placeholder="Little one's name" value={profile.toddlerName} onChange={e=>setProfile(p=>({...p,toddlerName:e.target.value}))} style={{padding:'12px 14px',border:'1.5px solid var(--border)',borderRadius:12,background:'var(--white)',fontSize:14,fontWeight:600,fontFamily:'inherit'}}/>
+                <input type="number" placeholder="Age" value={profile.toddlerAge||''} onChange={e=>setProfile(p=>({...p,toddlerAge:parseInt(e.target.value)||2}))} style={{padding:'12px 14px',border:'1.5px solid var(--border)',borderRadius:12,background:'var(--white)',fontSize:14,fontWeight:600,textAlign:'center',fontFamily:'inherit'}}/>
               </div>
             )}
 
@@ -843,48 +832,102 @@ export default function App() {
             {/* Browser notification permission */}
             <button onClick={async ()=>{
               if (typeof Notification==='undefined') { showToast('This browser does not support notifications'); return; }
-              if (Notification.permission==='granted') { showToast('Notifications already enabled ✓'); return; }
+              if (Notification.permission==='granted') { setNotifPermission('granted'); showToast('Already enabled ✓'); return; }
               const p = await Notification.requestPermission();
+              setNotifPermission(p);
               if (p==='granted') showToast('Notifications enabled ✓');
-              else showToast('Notifications blocked — check browser settings');
-            }} style={{width:'100%',background:'var(--navy)',color:'#fff',border:'none',borderRadius:12,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',marginBottom:20,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-              🔔 Turn on nudges
+              else showToast('Blocked — check browser settings');
+            }} style={{
+              width:'100%',
+              background: notifPermission==='granted' ? '#FAF2EE' : 'var(--navy)',
+              color:      notifPermission==='granted' ? 'var(--navy)' : '#fff',
+              border:     notifPermission==='granted' ? '2px solid var(--navy)' : 'none',
+              borderRadius:12,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',marginBottom:20,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+            }}>
+              {notifPermission==='granted' ? '✓ Nudges turned on' : '🔔 Turn on nudges'}
             </button>
-            {[['☀️','Breakfast','breakfast'],['🌤️','Lunch','lunch'],['🍎','Snack','snack'],['🌙','Dinner','dinner']].map(([ic,lb,key])=>(
-              <div key={key as string} style={{background:'var(--grayL)',border:'1px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
-                <div style={{width:38,height:38,borderRadius:10,background:'var(--white)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{ic}</div>
-                <div style={{flex:1,fontSize:14,fontWeight:700,color:'var(--ink)'}}>{lb}</div>
-                <input type="time" value={profile.notifTimes[key as string]} onChange={e=>setProfile(p=>({...p,notifTimes:{...p.notifTimes,[key as string]:e.target.value}}))} style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:10,padding:'7px 10px',fontSize:13,fontWeight:700,color:'var(--navy)',fontFamily:'inherit',cursor:'pointer'}}/>
-              </div>
-            ))}
+            {(() => {
+              const MEAL_ICONS: Record<string,string> = {breakfast:'☀️',lunch:'🌤️',snack:'🍎',dinner:'🌙',tea:'🫖',latenight:'🌃'};
+              const entries = Object.entries(profile.notifTimes);
+              const all     = ['breakfast','lunch','snack','dinner','tea','latenight'];
+              const missing = all.filter(k => !profile.notifTimes[k]);
+              const removeTime = (k: string) => {
+                const nt = { ...profile.notifTimes }; delete nt[k];
+                setProfile(p => ({ ...p, notifTimes: nt }));
+              };
+              const addTime = (k: string) => {
+                const defaults: Record<string,string> = {breakfast:'07:30',lunch:'12:30',snack:'16:00',dinner:'19:00',tea:'16:30',latenight:'22:00'};
+                setProfile(p => ({ ...p, notifTimes: { ...p.notifTimes, [k]: defaults[k]||'12:00' } }));
+              };
+              return (
+                <>
+                  {entries.map(([key,time]) => (
+                    <div key={key} style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
+                      <div style={{width:38,height:38,borderRadius:10,background:'var(--cream)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{MEAL_ICONS[key]||'🔔'}</div>
+                      <div style={{flex:1,fontSize:14,fontWeight:700,color:'var(--ink)',textTransform:'capitalize'}}>{key==='latenight'?'Late night':key}</div>
+                      <input type="time" value={time} onChange={e=>setProfile(p=>({...p,notifTimes:{...p.notifTimes,[key]:e.target.value}}))} style={{background:'var(--cream)',border:'1px solid var(--border)',borderRadius:10,padding:'7px 10px',fontSize:13,fontWeight:700,color:'var(--navy)',fontFamily:'inherit',cursor:'pointer'}}/>
+                      <button onClick={()=>removeTime(key)} title="Remove" style={{background:'none',border:'none',color:'var(--gray)',cursor:'pointer',fontSize:20,padding:0,lineHeight:1}}>×</button>
+                    </div>
+                  ))}
+                  {missing.length>0 && (
+                    <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:4}}>
+                      {missing.map(k => (
+                        <button key={k} onClick={()=>addTime(k)} style={{background:'var(--white)',border:'1.5px dashed var(--border)',borderRadius:999,padding:'7px 12px',fontSize:12,fontWeight:600,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:5}}>
+                          <span>{MEAL_ICONS[k]}</span>+ {k==='latenight'?'Late night':k}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {entries.length===0 && (
+                    <p style={{fontSize:12,color:'var(--gray)',textAlign:'center',marginTop:10}}>No reminders — tap a chip above to add one.</p>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 
         {step==='done'&&(
           <div style={{flex:1,padding:'40px 28px',display:'flex',flexDirection:'column',justifyContent:'center'}}>
             <div style={{textAlign:'center',flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
-              {/* Yipee doodle — bouncing party face */}
+              {/* Hurray doodle — stick figure arms up with confetti */}
               <div style={{animation:'drop-bounce 1s cubic-bezier(.34,1.2,.64,1) both',marginBottom:18}}>
-                <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{display:'block'}}>
-                  {/* face */}
-                  <circle cx="48" cy="50" r="34" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.4"/>
-                  {/* confetti sparks */}
-                  <path d="M 12 18 L 18 24" stroke="#C94A3A" strokeWidth="2.4" strokeLinecap="round"/>
-                  <path d="M 82 18 L 76 24" stroke="#4A6B3A" strokeWidth="2.4" strokeLinecap="round"/>
-                  <path d="M 8 46 L 14 46" stroke="#C68A2E" strokeWidth="2.4" strokeLinecap="round"/>
-                  <path d="M 82 46 L 88 46" stroke="#7C6D99" strokeWidth="2.4" strokeLinecap="round"/>
-                  <path d="M 20 10 L 22 6"  stroke="#C94A3A" strokeWidth="2.4" strokeLinecap="round"/>
-                  <path d="M 74 10 L 72 6"  stroke="#4A6B3A" strokeWidth="2.4" strokeLinecap="round"/>
-                  <circle cx="30" cy="14" r="1.8" fill="#C68A2E"/>
-                  <circle cx="66" cy="14" r="1.8" fill="#7C6D99"/>
-                  {/* eyes */}
-                  <path d="M 36 46 Q 38 40 42 46" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
-                  <path d="M 54 46 Q 56 40 60 46" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
-                  {/* open mouth — yipee */}
-                  <path d="M 36 58 Q 48 74 60 58 Q 48 66 36 58 Z" fill="#C94A3A" stroke="#1F1A14" strokeWidth="2.2" strokeLinejoin="round"/>
-                  {/* cheek dots */}
-                  <circle cx="28" cy="58" r="2.5" fill="#F4A7B5"/>
-                  <circle cx="68" cy="58" r="2.5" fill="#F4A7B5"/>
+                <svg width="128" height="128" viewBox="0 0 128 128" fill="none" style={{display:'block'}}>
+                  {/* confetti rays */}
+                  <path d="M 10 20 L 16 26" stroke="#C94A3A" strokeWidth="2.6" strokeLinecap="round"/>
+                  <path d="M 118 20 L 112 26" stroke="#4A6B3A" strokeWidth="2.6" strokeLinecap="round"/>
+                  <path d="M 6 60 L 14 60" stroke="#C68A2E" strokeWidth="2.6" strokeLinecap="round"/>
+                  <path d="M 114 60 L 122 60" stroke="#7C6D99" strokeWidth="2.6" strokeLinecap="round"/>
+                  <circle cx="22" cy="40" r="2.4" fill="#C94A3A"/>
+                  <circle cx="108" cy="40" r="2.4" fill="#4A6B3A"/>
+                  <path d="M 30 12 L 32 8" stroke="#C68A2E" strokeWidth="2.6" strokeLinecap="round"/>
+                  <path d="M 96 12 L 98 8" stroke="#7C6D99" strokeWidth="2.6" strokeLinecap="round"/>
+                  <path d="M 48 8 L 52 4" stroke="#C94A3A" strokeWidth="2.6" strokeLinecap="round"/>
+                  <path d="M 80 8 L 76 4" stroke="#4A6B3A" strokeWidth="2.6" strokeLinecap="round"/>
+
+                  {/* arms — thrown up */}
+                  <path d="M 46 58 Q 34 46 30 34" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round" fill="none"/>
+                  <path d="M 82 58 Q 94 46 98 34" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round" fill="none"/>
+                  {/* hands */}
+                  <circle cx="30" cy="32" r="4" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.4"/>
+                  <circle cx="98" cy="32" r="4" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.4"/>
+
+                  {/* head */}
+                  <circle cx="64" cy="52" r="22" fill="#FFE9A8" stroke="#1F1A14" strokeWidth="2.6"/>
+                  {/* happy eyes — closed crescents */}
+                  <path d="M 52 48 Q 55 42 58 48" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
+                  <path d="M 70 48 Q 73 42 76 48" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
+                  {/* open smile */}
+                  <path d="M 54 58 Q 64 70 74 58 Q 64 64 54 58 Z" fill="#C94A3A" stroke="#1F1A14" strokeWidth="2.2" strokeLinejoin="round"/>
+                  {/* cheeks */}
+                  <ellipse cx="46" cy="58" rx="3" ry="2" fill="#F4A7B5" opacity=".75"/>
+                  <ellipse cx="82" cy="58" rx="3" ry="2" fill="#F4A7B5" opacity=".75"/>
+
+                  {/* body */}
+                  <path d="M 64 74 L 64 100" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round"/>
+                  {/* legs */}
+                  <path d="M 64 100 L 54 118" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round"/>
+                  <path d="M 64 100 L 74 118" stroke="#1F1A14" strokeWidth="3" strokeLinecap="round"/>
                 </svg>
               </div>
               <h2 style={{fontFamily:'var(--serif)',fontSize:36,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,lineHeight:1.1}}>Welcome{profile.name?`, ${profile.name}`:''}<br/>— you are all set.</h2>
@@ -910,8 +953,7 @@ export default function App() {
   const [openItem, setOpenItem] = useState<PantryItem|null>(null);
 
   const renderFridge = () => {
-    const hour = new Date().getHours();
-    const greet = hour<12?'MORNING':hour<17?'AFTERNOON':'EVENING';
+    const greet = 'WELCOME';
     const value = pantry.reduce((s,i)=>s+(i.price||0),0);
     const ccy = CURRENCY[profile.country].symbol;
     const urgentItems = urgent;
@@ -1275,7 +1317,7 @@ export default function App() {
             <span style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:1,color:'var(--gray)'}}>REGION</span>
             {COUNTRIES.map(c=>(
               <button key={c.id} onClick={()=>{const np={...profile,country:c.id,city:c.cities[0]};setProfile(np);save({profile:np});}}
-                style={{background:profile.country===c.id?'var(--ink)':'var(--white)',color:profile.country===c.id?'var(--cream)':'var(--ink)',border:`1px solid ${profile.country===c.id?'var(--ink)':'var(--border)'}`,borderRadius:999,padding:'4px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:4}}>
+                style={{background:profile.country===c.id?'#FAF2EE':'var(--white)',color:profile.country===c.id?'var(--navy)':'var(--ink)',border:`1.5px solid ${profile.country===c.id?'var(--navy)':'var(--border)'}`,borderRadius:999,padding:'4px 10px',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:4}}>
                 <span>{c.flag}</span>{c.label}
               </button>
             ))}
@@ -1597,7 +1639,7 @@ export default function App() {
             <div style={{width:54,height:54,borderRadius:54,background:'var(--navy)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--serif)',fontSize:24,fontWeight:500,color:'#fff',flexShrink:0}}>{avatarInitial}</div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontFamily:'var(--serif)',fontSize:20,fontWeight:500,color:'var(--ink)'}}>{profile.name||'Friend'}</div>
-              <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{profile.city} · {dietLabel}</div>
+              <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{dietLabel}</div>
             </div>
           </div>
 
@@ -1735,18 +1777,29 @@ export default function App() {
             <EditableRow fieldKey="allergies" label="Allergies &amp; dislikes" value={(profile.allergies||[]).join(', ')||'None'}/>
           </div>
 
-          <div style={{marginTop:22,textAlign:'center',fontFamily:'var(--mono)',fontSize:10,color:'var(--gray)',letterSpacing:1}}>FRESHNUDGE · v1.0 · {profile.city}</div>
+          <div style={{marginTop:22,textAlign:'center',fontFamily:'var(--mono)',fontSize:10,color:'var(--gray)',letterSpacing:1}}>FRESHNUDGE · v1.0</div>
 
-          <button onClick={()=>{
-            const url = typeof window!=='undefined' ? window.location.origin : 'https://freshnudge.com';
+          {(() => {
+            const url  = typeof window!=='undefined' ? window.location.origin : 'https://freshnudge.com';
             const text = `Try FreshNudge — your smart kitchen agent. ${url}`;
-            const nav = navigator as Navigator & { share?: (d:{text:string;title:string;url:string})=>Promise<void> };
-            if (nav.share) nav.share({title:'FreshNudge',text,url}).catch(()=>{});
-            else { navigator.clipboard?.writeText(text); showToast('Link copied'); }
-          }} style={{marginTop:16,width:'100%',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:14,padding:12,fontSize:13,fontWeight:700,color:'var(--ink)',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-            Share app
-          </button>
+            return (
+              <div style={{marginTop:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer"
+                  style={{background:'#25D366',color:'#fff',border:'none',borderRadius:14,padding:12,fontSize:13,fontWeight:700,textDecoration:'none',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                  WhatsApp
+                </a>
+                <button onClick={()=>{
+                  const nav = navigator as Navigator & { share?: (d:{text:string;title:string;url:string})=>Promise<void> };
+                  if (nav.share) nav.share({title:'FreshNudge',text,url}).catch(()=>{});
+                  else { navigator.clipboard?.writeText(text); showToast('Link copied'); }
+                }} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:14,padding:12,fontSize:13,fontWeight:700,color:'var(--ink)',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                  More…
+                </button>
+              </div>
+            );
+          })()}
           <button onClick={()=>{
             if(confirm('Log out? This clears your data on this device.')) {
               localStorage.removeItem('mise_v1');
@@ -1810,12 +1863,13 @@ export default function App() {
   const [typedAdd, setTypedAdd] = useState('');
   const renderAddSheet = () => {
     const tabStyle = (on:boolean) => ({
-      flex:1, background: on?'var(--ink)':'var(--cream)',
-      color: on?'var(--surf)':'var(--ink)',
-      border:`1px solid ${on?'var(--ink)':'var(--border)'}`,
+      flex:1, background: on?'#FAF2EE':'var(--white)',
+      color: on?'var(--navy)':'var(--ink)',
+      border:`2px solid ${on?'var(--navy)':'var(--border)'}`,
       borderRadius:12, padding:'10px 8px', cursor:'pointer',
       fontFamily:'inherit', fontSize:12.5, fontWeight:700,
       display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+      transition: 'all .15s',
     });
     const submitType = async () => {
       if(!typedAdd.trim()) return;
