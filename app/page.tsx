@@ -215,7 +215,16 @@ export default function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [recording, setRecording] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
-  const [period, setPeriod] = useState('dinner');
+  // Pick default meal period based on time of day: <11 breakfast, <15 lunch, <18 snack, else dinner
+  const defaultPeriod = (() => {
+    if (typeof Date === 'undefined') return 'dinner';
+    const h = new Date().getHours();
+    if (h < 11) return 'breakfast';
+    if (h < 15) return 'lunch';
+    if (h < 18) return 'snack';
+    return 'dinner';
+  })();
+  const [period, setPeriod] = useState(defaultPeriod);
   const [meals, setMeals] = useState<Record<string,Meal[]>>({});
   const [loadingMeals, setLoadingMeals] = useState(false);
   const [cooking, setCooking] = useState<Meal|null>(null);
@@ -233,19 +242,39 @@ export default function App() {
   // ── Detect country from browser locale ──────────────────────────
   const detectCountry = (): Country => {
     if (typeof navigator === 'undefined') return 'IN';
+    // Timezone is a stronger location signal than navigator.language (browsers often en-US by default)
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      if (tz === 'Asia/Singapore' || tz.includes('Singapore')) return 'SG';
+      if (tz === 'Asia/Kolkata' || tz === 'Asia/Calcutta' || tz.startsWith('Asia/Kolkata')) return 'IN';
+      if (tz.startsWith('America/') || tz.startsWith('US/') || tz === 'Pacific/Honolulu') return 'US';
+    } catch {}
     const lang = navigator.language || 'en-IN';
     const region = lang.split('-')[1]?.toUpperCase();
     if (region === 'SG') return 'SG';
     if (region === 'US') return 'US';
     if (region === 'IN') return 'IN';
-    // Fallback: timezone hint
-    try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tz.includes('Singapore')) return 'SG';
-      if (tz.startsWith('America/')) return 'US';
-    } catch {}
     return 'IN';
   };
+
+  // Optional: try IP-based geolocation for stronger signal (non-blocking)
+  useEffect(() => {
+    const saved = typeof localStorage!=='undefined' ? localStorage.getItem('mise_v1') : null;
+    // Only auto-update if user hasn't explicitly set a country via a saved profile
+    if (saved) {
+      try { if (JSON.parse(saved)?.profile?.country) return; } catch {}
+    }
+    fetch('https://ipapi.co/json/', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: {country_code?: string} | null) => {
+        if (!d?.country_code) return;
+        const cc = d.country_code.toUpperCase();
+        if (cc === 'SG' || cc === 'IN' || cc === 'US') {
+          setProfile(p => ({ ...p, country: cc as Country }));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // ── Load from localStorage ──────────────────────────────────────
   useEffect(()=>{
@@ -476,10 +505,25 @@ export default function App() {
     try {
       const sevenDaysAgo = Date.now() - 7*86400000;
       const recentlyCooked = cookLog.filter(l=>new Date(l.date).getTime()>=sevenDaysAgo).map(l=>l.name);
+      const ages = family.map(f=>f.age||999);
+      const hasToddler = profile.hasToddler || ages.some(a=>a<5);
+      const hasKid     = hasToddler || ages.some(a=>a<12);
+      const childName  = profile.toddlerName || family.find(f=>f.age<12)?.name || '';
+      const childAge   = profile.toddlerAge  || Math.min(...ages.filter(a=>a<12), 30);
       const res  = await fetch('/api/meals', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({pantry, period:p, dietary:profile, recentlyCooked, cuisines: profile.cuisines||[]}),
+        body: JSON.stringify({
+          pantry, period:p, recentlyCooked,
+          cuisines: profile.cuisines||[],
+          dietary: {
+            ...profile,
+            hasToddler, hasKid,
+            childMode: hasToddler ? 'toddler' : hasKid ? 'kid' : 'none',
+            childName, childAge,
+            household: family.map(f=>({name:f.name, age:f.age})),
+          },
+        }),
       });
       const data = await res.json();
       if(data.meals?.length) setMeals(m=>({...m,[p]:data.meals}));
@@ -569,20 +613,34 @@ export default function App() {
 
         {step==='welcome'&&(
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(180deg,var(--cream) 0%,var(--surf) 100%)'}}>
-            {/* Cute doodle fridge — drops in on mount */}
+            {/* Cute doodle fridge with face — drops in on mount */}
             <div style={{animation:'drop-bounce 1.1s cubic-bezier(.34,1.2,.64,1) both',marginBottom:18,transformOrigin:'50% 100%'}}>
-              <svg width="64" height="78" viewBox="0 0 64 78" fill="none" style={{display:'block'}}>
-                {/* body — wavy sketch outline */}
-                <path d="M 10 6 Q 10 4 12 4 L 52 4 Q 54 4 54 6 L 54 72 Q 54 74 52 74 L 12 74 Q 10 74 10 72 Z"
-                      stroke="#1F1A14" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" fill="#FFFBF5"/>
-                {/* door divider with slight squiggle */}
-                <path d="M 10 30 Q 20 31 32 30 Q 44 29 54 30" stroke="#1F1A14" strokeWidth="2" strokeLinecap="round" fill="none"/>
+              <svg width="96" height="118" viewBox="0 0 96 118" fill="none" style={{display:'block'}}>
+                {/* legs */}
+                <line x1="18" y1="114" x2="18" y2="118" stroke="#1F1A14" strokeWidth="2.6" strokeLinecap="round"/>
+                <line x1="78" y1="114" x2="78" y2="118" stroke="#1F1A14" strokeWidth="2.6" strokeLinecap="round"/>
+                {/* body */}
+                <path d="M 12 10 Q 12 6 16 6 L 80 6 Q 84 6 84 10 L 84 110 Q 84 114 80 114 L 16 114 Q 12 114 12 110 Z"
+                      stroke="#1F1A14" strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" fill="#FFFBF5"/>
+                {/* top-freezer divider */}
+                <path d="M 12 42 Q 24 43 48 42 Q 72 41 84 42" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
                 {/* handles */}
-                <path d="M 15 14 L 15 22" stroke="#1F1A14" strokeWidth="2.2" strokeLinecap="round"/>
-                <path d="M 15 40 L 15 52" stroke="#1F1A14" strokeWidth="2.2" strokeLinecap="round"/>
-                {/* little sparkle */}
-                <path d="M 44 12 L 46 14 L 48 12 L 46 10 Z" fill="#C94A3A"/>
-                <circle cx="42" cy="20" r="1.2" fill="#4A6B3A"/>
+                <rect x="20" y="18" width="4" height="14" rx="2" fill="#1F1A14"/>
+                <rect x="20" y="54" width="4" height="18" rx="2" fill="#1F1A14"/>
+                {/* FACE — eyes + smile on the lower door */}
+                <circle cx="40" cy="72" r="3" fill="#1F1A14"/>
+                <circle cx="60" cy="72" r="3" fill="#1F1A14"/>
+                <path d="M 38 84 Q 50 94 62 84" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
+                {/* rosy cheeks */}
+                <ellipse cx="34" cy="82" rx="4" ry="2.5" fill="#F4A7B5" opacity=".7"/>
+                <ellipse cx="66" cy="82" rx="4" ry="2.5" fill="#F4A7B5" opacity=".7"/>
+                {/* little food peeking out the top — strawberry + leaf */}
+                <path d="M 46 -2 L 42 4 L 50 4 Z" fill="#C94A3A"/>
+                <path d="M 44 -1 Q 46 2 48 -1" stroke="#4A6B3A" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+                {/* sparkles around */}
+                <path d="M 4 28 L 7 30 L 4 32 L 1 30 Z" fill="#C68A2E"/>
+                <circle cx="92" cy="24" r="2" fill="#4A6B3A"/>
+                <path d="M 90 60 L 93 62 L 90 64 L 87 62 Z" fill="#C94A3A" opacity=".7"/>
               </svg>
             </div>
 
@@ -629,7 +687,7 @@ export default function App() {
                 const active = profile.familySize===val;
                 return (
                   <div key={n} onClick={()=>setProfile(p=>({...p,familySize:val}))}
-                    style={{flex:1,background:active?'var(--ink)':'var(--white)',border:`1.5px solid ${active?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'14px 0',textAlign:'center',fontFamily:'var(--serif)',fontSize:22,fontWeight:500,color:active?'var(--cream)':'var(--ink)',cursor:'pointer'}}>
+                    style={{flex:1,background:active?'#FAF2EE':'var(--white)',border:`2px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 0',textAlign:'center',fontFamily:'var(--serif)',fontSize:22,fontWeight:500,color:active?'var(--navy)':'var(--ink)',cursor:'pointer',transition:'all .15s'}}>
                     {n}
                   </div>
                 );
@@ -641,9 +699,9 @@ export default function App() {
                 const active = profile.hasToddler===val;
                 return (
                   <div key={lb as string} onClick={()=>setProfile(p=>({...p,hasToddler:val as boolean}))}
-                    style={{flex:1,background:active?'var(--ink)':'var(--white)',border:`1.5px solid ${active?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',cursor:'pointer'}}>
-                    <div style={{fontSize:14,fontWeight:700,color:active?'var(--cream)':'var(--ink)'}}>{lb}</div>
-                    <div style={{fontSize:11,color:active?'var(--cream)':'var(--gray)',opacity:active?.8:1,marginTop:2}}>{sub}</div>
+                    style={{flex:1,background:active?'#FAF2EE':'var(--white)',border:`2px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',cursor:'pointer',transition:'all .15s'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:active?'var(--navy)':'var(--ink)'}}>{lb}</div>
+                    <div style={{fontSize:11,color:'var(--gray)',marginTop:2}}>{sub}</div>
                   </div>
                 );
               })}
@@ -679,9 +737,9 @@ export default function App() {
                     isVeg: o.id==='veg'||o.id==='vegan',
                     eatsEggs: o.id==='veg' ? p.eatsEggs : (o.id==='vegan' ? false : p.eatsEggs),
                   }))}
-                    style={{background:active?'var(--ink)':'var(--white)',border:`1.5px solid ${active?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'12px 14px',cursor:'pointer'}}>
-                    <div style={{fontSize:14,fontWeight:700,color:active?'var(--cream)':'var(--ink)'}}>{o.t}</div>
-                    <div style={{fontSize:12,color:active?'var(--cream)':'var(--gray)',opacity:active?.75:1,marginTop:2}}>{o.s}</div>
+                    style={{background:active?'#FAF2EE':'var(--white)',border:`2px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'12px 14px',cursor:'pointer',transition:'all .15s'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:active?'var(--navy)':'var(--ink)'}}>{o.t}</div>
+                    <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{o.s}</div>
                   </div>
                 );
               })}
@@ -690,8 +748,8 @@ export default function App() {
               <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:14,marginTop:6}}>
                 <p style={{fontSize:12,color:'var(--gray)',marginBottom:10}}>Do you eat eggs?</p>
                 <div style={{display:'flex',gap:8}}>
-                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:true}))} style={{flex:1,background:profile.eatsEggs?'var(--ink)':'var(--cream)',color:profile.eatsEggs?'var(--cream)':'var(--ink)',border:`1px solid ${profile.eatsEggs?'var(--ink)':'var(--border)'}`,borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}>Yes 🥚</button>
-                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:false}))} style={{flex:1,background:!profile.eatsEggs?'var(--ink)':'var(--cream)',color:!profile.eatsEggs?'var(--cream)':'var(--ink)',border:`1px solid ${!profile.eatsEggs?'var(--ink)':'var(--border)'}`,borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}>No eggs</button>
+                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:true}))} style={{flex:1,background:profile.eatsEggs?'#FAF2EE':'var(--white)',color:profile.eatsEggs?'var(--navy)':'var(--ink)',border:`2px solid ${profile.eatsEggs?'var(--navy)':'var(--border)'}`,borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer',transition:'all .15s'}}>Yes 🥚</button>
+                  <button onClick={()=>setProfile(p=>({...p,eatsEggs:false}))} style={{flex:1,background:!profile.eatsEggs?'#FAF2EE':'var(--white)',color:!profile.eatsEggs?'var(--navy)':'var(--ink)',border:`2px solid ${!profile.eatsEggs?'var(--navy)':'var(--border)'}`,borderRadius:11,padding:11,fontSize:13,fontWeight:700,fontFamily:'inherit',cursor:'pointer',transition:'all .15s'}}>No eggs</button>
                 </div>
               </div>
             )}
@@ -709,7 +767,7 @@ export default function App() {
               const active = addMethodChoice===o.id;
               return (
                 <div key={o.id} onClick={()=>setAddMethodChoice(o.id)}
-                  style={{background:active?'#FAF2EE':'var(--white)',border:`1.5px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'pointer'}}>
+                  style={{background:active?'#FAF2EE':'var(--white)',border:`2px solid ${active?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'center',gap:14,marginBottom:10,cursor:'pointer',transition:'all .15s'}}>
                   <div style={{width:44,height:44,borderRadius:12,background:'var(--cream)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>{o.icon}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:14,fontWeight:700,color:'var(--ink)'}}>{o.lb}</div>
@@ -746,11 +804,11 @@ export default function App() {
                     ...p,
                     cuisines: selected ? (p.cuisines||[]).filter(x=>x!==c.id) : [...(p.cuisines||[]), c.id]
                   }))}
-                    style={{background:selected?'var(--ink)':'var(--white)',border:`1.5px solid ${selected?'var(--ink)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'flex-start',gap:14,cursor:'pointer'}}>
+                    style={{background:selected?'#FAF2EE':'var(--white)',border:`2px solid ${selected?'var(--navy)':'var(--border)'}`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'flex-start',gap:14,cursor:'pointer',transition:'all .15s'}}>
                     <span style={{fontSize:28,flexShrink:0,lineHeight:1}}>{c.emoji}</span>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:14,fontWeight:700,color:selected?'var(--cream)':'var(--ink)'}}>{c.name}</div>
-                      <div style={{fontSize:12,color:selected?'var(--cream)':'var(--gray)',opacity:selected?.75:1,marginTop:3,lineHeight:1.5}}>{c.examples}</div>
+                      <div style={{fontSize:14,fontWeight:700,color:selected?'var(--navy)':'var(--ink)'}}>{c.name}</div>
+                      <div style={{fontSize:12,color:'var(--gray)',marginTop:3,lineHeight:1.5}}>{c.examples}</div>
                     </div>
                     {selected&&<div style={{width:22,height:22,borderRadius:11,background:'var(--navy)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0}}>✓</div>}
                   </div>
@@ -761,9 +819,37 @@ export default function App() {
         )}
 
         {step==='notifications'&&(
-          <div style={{flex:1,padding:'28px 22px'}}>
-            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)'}}>When should we nudge you?</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginBottom:22,lineHeight:1.5}}>We&apos;ll remind you before things expire and suggest what to eat. Change anytime in settings.</p>
+          <div style={{flex:1,padding:'28px 22px',overflowY:'auto'}}>
+            <div style={{display:'flex',justifyContent:'center',marginBottom:10,animation:'wiggle 2s ease-in-out infinite',transformOrigin:'50% 20%'}}>
+              <svg width="72" height="72" viewBox="0 0 72 72" fill="none">
+                {/* bell body */}
+                <path d="M 36 10 Q 50 10 54 28 L 56 48 Q 58 52 54 54 L 18 54 Q 14 52 16 48 L 18 28 Q 22 10 36 10 Z"
+                      stroke="#1F1A14" strokeWidth="2.6" strokeLinejoin="round" fill="#FFE9A8"/>
+                {/* top loop */}
+                <circle cx="36" cy="8" r="3" stroke="#1F1A14" strokeWidth="2.4" fill="#FFFBF5"/>
+                {/* clapper */}
+                <circle cx="36" cy="60" r="4" fill="#1F1A14"/>
+                {/* sparkles */}
+                <path d="M 6 18 L 9 20 L 6 22 L 3 20 Z" fill="#C94A3A"/>
+                <path d="M 66 16 L 69 18 L 66 20 L 63 18 Z" fill="#4A6B3A"/>
+                <circle cx="8" cy="44" r="2" fill="#C68A2E"/>
+                <circle cx="64" cy="42" r="2" fill="#7C6D99"/>
+                <path d="M 22 6 L 24 2" stroke="#C94A3A" strokeWidth="2.2" strokeLinecap="round"/>
+                <path d="M 50 6 L 48 2" stroke="#4A6B3A" strokeWidth="2.2" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <h2 style={{fontSize:28,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,marginBottom:6,fontFamily:'var(--serif)',textAlign:'center'}}>When should we nudge you?</h2>
+            <p style={{fontSize:13,color:'var(--gray)',marginBottom:18,lineHeight:1.5,textAlign:'center'}}>We&apos;ll remind you before things expire and suggest what to eat. Change anytime in settings.</p>
+            {/* Browser notification permission */}
+            <button onClick={async ()=>{
+              if (typeof Notification==='undefined') { showToast('This browser does not support notifications'); return; }
+              if (Notification.permission==='granted') { showToast('Notifications already enabled ✓'); return; }
+              const p = await Notification.requestPermission();
+              if (p==='granted') showToast('Notifications enabled ✓');
+              else showToast('Notifications blocked — check browser settings');
+            }} style={{width:'100%',background:'var(--navy)',color:'#fff',border:'none',borderRadius:12,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',marginBottom:20,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              🔔 Turn on nudges
+            </button>
             {[['☀️','Breakfast','breakfast'],['🌤️','Lunch','lunch'],['🍎','Snack','snack'],['🌙','Dinner','dinner']].map(([ic,lb,key])=>(
               <div key={key as string} style={{background:'var(--grayL)',border:'1px solid var(--border)',borderRadius:14,padding:'13px 16px',display:'flex',alignItems:'center',gap:12,marginBottom:9}}>
                 <div style={{width:38,height:38,borderRadius:10,background:'var(--white)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{ic}</div>
@@ -1450,7 +1536,7 @@ export default function App() {
   const [editingField, setEditingField] = useState<string|null>(null);
   const [editingMember, setEditingMember] = useState<number|null>(null);
   const [addingMember, setAddingMember] = useState(false);
-  const [newMember, setNewMember] = useState<{name:string;age:number}>({name:'',age:0});
+  const [newMember, setNewMember] = useState<{name:string;age:number;kidFilters?:string[]}>({name:'',age:0});
 
   const renderProfile = () => {
     const avatarInitial = (profile.name||'F').charAt(0).toUpperCase();
@@ -1519,7 +1605,6 @@ export default function App() {
           <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>PERSONAL</div>
           <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,overflow:'hidden'}}>
             <EditableRow fieldKey="name" label="Name" value={profile.name||''}/>
-            <EditableRow fieldKey="city" label="City" value={profile.city||''}/>
             <EditableRow fieldKey="diet" label="Diet"
               value={profile.isVeg ? (profile.eatsEggs?'egg-veg':'veg') : 'all'}
               options={[{v:'veg',l:'Vegetarian'},{v:'egg-veg',l:'Egg-vegetarian'},{v:'all',l:'Everything'},{v:'vegan',l:'Vegan'}]}/>
@@ -1575,32 +1660,65 @@ export default function App() {
 
             {/* Add member — inline form */}
             {addingMember ? (
-              <div style={{background:'var(--white)',border:`1px solid var(--navy)`,borderRadius:16,padding:14}}>
-                <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:10}}>NEW MEMBER</div>
-                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10,marginBottom:10}}>
-                  <label>
-                    <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>NAME</div>
-                    <input autoFocus value={newMember.name} onChange={e=>setNewMember(v=>({...v,name:e.target.value}))}
-                      placeholder="e.g. Priya" style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none'}}/>
-                  </label>
-                  <label>
-                    <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>AGE</div>
-                    <input type="number" min="0" max="110" value={newMember.age||''} onChange={e=>setNewMember(v=>({...v,age:parseInt(e.target.value)||0}))}
-                      placeholder="30" style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none',textAlign:'center'}}/>
-                  </label>
-                </div>
-                <div style={{display:'flex',gap:8}}>
-                  <button onClick={()=>{
-                    if(!newMember.name.trim()) return;
-                    const newId = Math.max(0, ...family.map(f=>f.id))+1;
-                    const nf = [...family, {id:newId, name:newMember.name.trim(), role:'Adult', age:newMember.age||30, avatar:'👤'}];
-                    setFamily(nf); save({family:nf});
-                    setNewMember({name:'',age:0});
-                    setAddingMember(false);
-                  }} style={{flex:1,background:'var(--navy)',color:'#fff',border:'none',borderRadius:10,padding:'10px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Save</button>
-                  <button onClick={()=>{setAddingMember(false);setNewMember({name:'',age:0});}} style={{background:'transparent',color:'var(--gray)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 14px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
-                </div>
-              </div>
+              (() => {
+                const kidSafe = newMember.age>0 && newMember.age<5;
+                const filters = newMember.kidFilters ?? ['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt'];
+                const toggleFilter = (f: string) => setNewMember(v => ({...v, kidFilters: (v.kidFilters??['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt']).includes(f)
+                  ? (v.kidFilters??['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt']).filter(x=>x!==f)
+                  : [...(v.kidFilters??['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt']), f]}));
+                return (
+                  <div style={{background:'var(--white)',border:`1px solid var(--navy)`,borderRadius:16,padding:14}}>
+                    <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:10}}>NEW MEMBER</div>
+                    <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:10,marginBottom:10}}>
+                      <label>
+                        <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>NAME</div>
+                        <input autoFocus value={newMember.name} onChange={e=>setNewMember(v=>({...v,name:e.target.value}))}
+                          placeholder="e.g. Priya" style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none'}}/>
+                      </label>
+                      <label>
+                        <div style={{fontFamily:'var(--mono)',fontSize:9.5,letterSpacing:.8,color:'var(--gray)',marginBottom:6}}>AGE</div>
+                        <input type="number" min="0" max="110" value={newMember.age||''} onChange={e=>setNewMember(v=>({...v,age:parseInt(e.target.value)||0}))}
+                          placeholder="30" style={{width:'100%',padding:'10px 12px',border:'1px solid var(--border)',borderRadius:10,fontSize:14,fontWeight:600,color:'var(--ink)',background:'var(--cream)',fontFamily:'inherit',outline:'none',textAlign:'center'}}/>
+                      </label>
+                    </div>
+                    {kidSafe && (
+                      <div style={{background:'var(--cream)',border:'1px solid var(--border)',borderRadius:12,padding:12,marginBottom:10}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+                          <span style={{fontSize:10,padding:'3px 8px',borderRadius:999,background:'#FAEED1',color:'#C68A2E',fontWeight:800}}>KID-SAFE</span>
+                          <span style={{fontSize:12,color:'var(--gray)'}}>Auto-filtered from recipes:</span>
+                        </div>
+                        <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                          {['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt'].map(f => {
+                            const on = filters.includes(f);
+                            return (
+                              <button key={f} onClick={()=>toggleFilter(f)} style={{fontSize:11,padding:'4px 10px',borderRadius:999,background:on?'var(--ink)':'var(--white)',color:on?'var(--cream)':'var(--ink)',border:`1px solid ${on?'var(--ink)':'var(--border)'}`,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+                                {on?'✕ ':''}{f}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{display:'flex',gap:8}}>
+                      <button onClick={()=>{
+                        if(!newMember.name.trim()) return;
+                        const newId = Math.max(0, ...family.map(f=>f.id))+1;
+                        const nf = [...family, {id:newId, name:newMember.name.trim(), role: (newMember.age>0&&newMember.age<5)?'Toddler':'Adult', age:newMember.age||30, avatar:'👤'}];
+                        setFamily(nf);
+                        // If kid added, also enable toddler safety at profile level + merge filters into allergies
+                        const np = (newMember.age>0&&newMember.age<5)
+                          ? { ...profile, hasToddler: true, toddlerName: newMember.name.trim(), toddlerAge: newMember.age, allergies: Array.from(new Set([...(profile.allergies||[]), ...(newMember.kidFilters??['Spicy','Whole nuts','Raw honey','Choking hazards','Excess salt'])])) }
+                          : profile;
+                        setProfile(np);
+                        save({family:nf, profile:np});
+                        setNewMember({name:'',age:0,kidFilters:undefined});
+                        setAddingMember(false);
+                      }} style={{flex:1,background:'var(--navy)',color:'#fff',border:'none',borderRadius:10,padding:'10px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Save</button>
+                      <button onClick={()=>{setAddingMember(false);setNewMember({name:'',age:0,kidFilters:undefined});}} style={{background:'transparent',color:'var(--gray)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 14px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+                    </div>
+                  </div>
+                );
+              })()
             ) : (
               <button onClick={()=>setAddingMember(true)} style={{background:'none',border:'1.5px dashed var(--border)',borderRadius:14,padding:14,fontSize:13,fontWeight:600,color:'var(--gray)',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
                 <svg width="14" height="14" viewBox="0 0 14 14"><line x1="7" y1="2" x2="7" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1620,11 +1738,21 @@ export default function App() {
           <div style={{marginTop:22,textAlign:'center',fontFamily:'var(--mono)',fontSize:10,color:'var(--gray)',letterSpacing:1}}>FRESHNUDGE · v1.0 · {profile.city}</div>
 
           <button onClick={()=>{
+            const url = typeof window!=='undefined' ? window.location.origin : 'https://freshnudge.com';
+            const text = `Try FreshNudge — your smart kitchen agent. ${url}`;
+            const nav = navigator as Navigator & { share?: (d:{text:string;title:string;url:string})=>Promise<void> };
+            if (nav.share) nav.share({title:'FreshNudge',text,url}).catch(()=>{});
+            else { navigator.clipboard?.writeText(text); showToast('Link copied'); }
+          }} style={{marginTop:16,width:'100%',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:14,padding:12,fontSize:13,fontWeight:700,color:'var(--ink)',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            Share app
+          </button>
+          <button onClick={()=>{
             if(confirm('Log out? This clears your data on this device.')) {
               localStorage.removeItem('mise_v1');
               window.location.reload();
             }
-          }} style={{marginTop:16,width:'100%',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:14,padding:12,fontSize:13,fontWeight:700,color:'var(--ink)',cursor:'pointer',fontFamily:'inherit'}}>
+          }} style={{marginTop:10,width:'100%',background:'transparent',border:'none',color:'var(--gray)',borderRadius:14,padding:10,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
             Logout
           </button>
           <div style={{height:24}}/>
@@ -1855,7 +1983,14 @@ export default function App() {
             <div style={{marginTop:16}}>
               <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--gray)',marginBottom:10}}>WHAT TO DO</div>
               <div style={{display:'grid',gap:8}}>
-                <button onClick={()=>{markUsed(openItem.id);setOpenItem(null);showToast(`✓ Ate the ${openItem.name}`);}} style={{background:'#4A6B3A',color:'#fff',border:'none',borderRadius:14,padding:14,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>✓ Ate it</button>
+                {(() => {
+                  const isDrinkable = openItem.cat === 'Dairy' || openItem.cat === 'Beverages';
+                  const verb   = isDrinkable ? 'Consumed' : 'Ate it';
+                  const past   = isDrinkable ? 'Consumed' : 'Ate';
+                  return (
+                    <button onClick={()=>{markUsed(openItem.id);setOpenItem(null);showToast(`✓ ${past} the ${openItem.name}`);}} style={{background:'#4A6B3A',color:'#fff',border:'none',borderRadius:14,padding:14,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>✓ {verb}</button>
+                  );
+                })()}
                 <button onClick={()=>{markWasted(openItem.id);setOpenItem(null);showToast(`✗ Wasted ${openItem.name} — noted`);}} style={{background:'var(--surf)',color:'#C94A3A',border:'1.5px solid #C94A3A',borderRadius:14,padding:14,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>✗ Threw it / wasted</button>
               </div>
             </div>

@@ -93,9 +93,9 @@ export async function POST(req: NextRequest) {
 - Greek yogurt 32oz: $5-7`,
     };
 
-    // ── 2. Extract structured items with GPT-4o-mini ──────────
+    // ── 2. Extract structured items with GPT-4o ──────────
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       max_tokens: 900,
       response_format: { type: 'json_object' },
       messages: [{
@@ -149,7 +149,19 @@ Arabic: laban=Milk, bayd=Eggs, dajaj=Chicken, lahm=Meat, ruz=Rice, zayt=Oil, khu
     });
 
     const content = JSON.parse(completion.choices[0].message.content ?? '{"items":[]}');
-    return NextResponse.json({ items: content.items ?? [], transcript });
+
+    // Hard caps per country — if price exceeds this ceiling for a typical grocery quantity, drop it
+    const PRICE_CEIL: Record<typeof country, number> = { IN: 500, SG: 25, US: 20 };
+    const items = (content.items ?? []).map((it: {item_name:string;price?:number;quantity?:number;unit?:string}) => {
+      if (typeof it.price === 'number') {
+        if (it.price > PRICE_CEIL[country] || it.price < 0) {
+          return { ...it, price: undefined };
+        }
+      }
+      return it;
+    });
+
+    return NextResponse.json({ items, transcript });
 
   } catch (err: unknown) {
     console.error('Transcribe error:', err);
