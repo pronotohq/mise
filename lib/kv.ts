@@ -11,16 +11,20 @@ const url   = process.env.KV_REST_API_URL;
 const token = process.env.KV_REST_API_TOKEN;
 
 // Simple in-memory fallback for local dev / missing KV
-const memStore: Record<string, unknown> = {};
+const memStore: Record<string, unknown>        = {};
+const memSets:  Record<string, Set<string>>    = {};
 
 async function redisCmd(...args: (string | number)[]): Promise<unknown> {
   if (!url || !token) {
     // Fallback: in-memory (ephemeral, same-instance only — fine for dev)
     const [cmd, key, ...rest] = args.map(String);
-    if (cmd === 'SET')    { memStore[key] = rest[0]; return 'OK'; }
-    if (cmd === 'GET')    { return memStore[key] ?? null; }
-    if (cmd === 'DEL')    { delete memStore[key]; return 1; }
-    if (cmd === 'EXPIRE') { return 1; }
+    if (cmd === 'SET')      { memStore[key] = rest[0]; return 'OK'; }
+    if (cmd === 'GET')      { return memStore[key] ?? null; }
+    if (cmd === 'DEL')      { delete memStore[key]; return 1; }
+    if (cmd === 'EXPIRE')   { return 1; }
+    if (cmd === 'SADD')     { (memSets[key] ??= new Set()); rest.forEach(v=>memSets[key].add(v)); return rest.length; }
+    if (cmd === 'SREM')     { rest.forEach(v=>memSets[key]?.delete(v)); return rest.length; }
+    if (cmd === 'SMEMBERS') { return Array.from(memSets[key] ?? []); }
     return null;
   }
 
@@ -71,5 +75,20 @@ export const kv = {
 
   async del(key: string): Promise<void> {
     await redisCmd('DEL', key);
+  },
+
+  async sadd(key: string, ...members: string[]): Promise<void> {
+    if (!members.length) return;
+    await redisCmd('SADD', key, ...members);
+  },
+
+  async srem(key: string, ...members: string[]): Promise<void> {
+    if (!members.length) return;
+    await redisCmd('SREM', key, ...members);
+  },
+
+  async smembers(key: string): Promise<string[]> {
+    const raw = await redisCmd('SMEMBERS', key);
+    return Array.isArray(raw) ? (raw as string[]) : [];
   },
 };

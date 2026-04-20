@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { priceForItem } from './lib/prices';
+import { enablePushAndSync, resyncPrefs, getOrCreateUserId } from './lib/push-client';
 
 // ── Types ──────────────────────────────────────────────────────────
 interface PantryItem {
@@ -590,6 +591,20 @@ export default function App() {
   useEffect(()=>{ if(tab==='meals') generateMeals(period); },[tab,period]);
   useEffect(()=>{ if(!showAdd){ setPendingItems([]); setVoiceTranscript(''); } },[showAdd]);
 
+  // ── Keep server-side push prefs in sync when user edits times/profile ──
+  useEffect(() => {
+    if (!onboardingDone) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
+    resyncPrefs({
+      userId: getOrCreateUserId(),
+      name: profile.name || '',
+      notifTimes: profile.notifTimes,
+      tz, country: profile.country,
+      hasToddler: !!profile.hasToddler,
+    });
+  }, [onboardingDone, profile.name, profile.country, profile.hasToddler, profile.notifTimes]);
+
   // ── Schedule browser notifications for each meal reminder ───────
   // Fires while the app is open (tab/PWA). Service-worker push is a future upgrade.
   useEffect(() => {
@@ -932,11 +947,24 @@ export default function App() {
             {/* Browser notification permission */}
             <button onClick={async ()=>{
               if (typeof Notification==='undefined') { showToast('This browser does not support notifications'); return; }
-              if (Notification.permission==='granted') { setNotifPermission('granted'); showToast('Already enabled ✓'); return; }
-              const p = await Notification.requestPermission();
-              setNotifPermission(p);
-              if (p==='granted') showToast('Notifications enabled ✓');
-              else showToast('Blocked — check browser settings');
+              let perm: NotificationPermission = Notification.permission;
+              if (perm !== 'granted') {
+                perm = await Notification.requestPermission();
+                setNotifPermission(perm);
+              } else setNotifPermission('granted');
+              if (perm !== 'granted') { showToast('Blocked — check browser settings'); return; }
+
+              // Subscribe to real push + sync prefs server-side
+              const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
+              const res = await enablePushAndSync({
+                userId: getOrCreateUserId(),
+                name: profile.name || '',
+                notifTimes: profile.notifTimes,
+                tz, country: profile.country,
+                hasToddler: !!profile.hasToddler,
+              });
+              if (res.ok) showToast('Nudges set up — you\u2019ll get them even when the app is closed');
+              else showToast(res.reason || 'Couldn\u2019t enable push — using in-app only');
             }} style={{
               width:'100%',
               background: notifPermission==='granted' ? '#FAF2EE' : 'var(--navy)',
