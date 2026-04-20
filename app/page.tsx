@@ -205,7 +205,8 @@ export default function App() {
   const [family, setFamily] = useState<FamilyMember[]>([]);
   const [pantry, setPantry] = useState<PantryItem[]>([]);
   const [cookLog, setCookLog] = useState<CookLog[]>([]);
-  const [isPremium, setIsPremium] = useState(false);
+  // During closed beta / user testing: everyone is premium. Flip default to false when we turn on paid gating.
+  const [isPremium, setIsPremium] = useState(true);
   const [shopList, setShopList] = useState<{id:string;name:string;checked:boolean}[]>([]);
 
   // ── Freemium quotas (daily, reset at UTC midnight) ──────────────
@@ -329,6 +330,8 @@ export default function App() {
         if(d.usedLog)  setUsedLog(d.usedLog);
         if(d.wasteLog) setWasteLog(d.wasteLog);
         if(d.quota)    setQuota(d.quota);
+        // Closed beta: always treat existing users as premium even if their saved profile was free
+        setIsPremium(true);
       } else {
         setProfile(p => ({ ...p, country: detectCountry() }));
       }
@@ -581,6 +584,51 @@ export default function App() {
 
   useEffect(()=>{ if(tab==='meals') generateMeals(period); },[tab,period]);
   useEffect(()=>{ if(!showAdd){ setPendingItems([]); setVoiceTranscript(''); } },[showAdd]);
+
+  // ── Schedule browser notifications for each meal reminder ───────
+  // Fires while the app is open (tab/PWA). Service-worker push is a future upgrade.
+  useEffect(() => {
+    if (!onboardingDone) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const now    = new Date();
+    const labels: Record<string,string> = {
+      breakfast: 'Breakfast nudge',
+      lunch:     'Lunch nudge',
+      snack:     'Snack time',
+      dinner:    'Dinner nudge',
+      tea:       'Tea time',
+      latenight: 'Late-night bite',
+    };
+
+    Object.entries(profile.notifTimes || {}).forEach(([key, hhmm]) => {
+      if (!hhmm) return;
+      const [h, m] = hhmm.split(':').map(Number);
+      if (isNaN(h) || isNaN(m)) return;
+      const target = new Date();
+      target.setHours(h, m, 0, 0);
+      if (target.getTime() <= now.getTime()) return; // already passed today
+
+      const delayMs = target.getTime() - now.getTime();
+      const urgentCount = pantry.filter(i => daysLeft(i.expiry) <= 1).length;
+      const body = urgentCount > 0
+        ? `${urgentCount} item${urgentCount>1?'s':''} expiring soon. Tap to see what to cook.`
+        : `What's for ${key==='latenight'?'a late bite':key}? Open FreshNudge.`;
+
+      timers.push(setTimeout(() => {
+        try {
+          new Notification(labels[key] || 'FreshNudge', {
+            body,
+            icon: '/icon-192.png',
+            tag: `fn-${key}`,
+          });
+        } catch {}
+      }, delayMs));
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, [onboardingDone, profile.notifTimes, pantry]);
 
   // ── Pantry helpers ──────────────────────────────────────────────
   const markUsed=(id:string)=>{
@@ -1696,14 +1744,15 @@ export default function App() {
             <>
               <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>TODAY · FREE PLAN</div>
               <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:14,marginBottom:20}}>
-                {([
-                  ['Voice adds', 'voice' as QuotaKey],
-                  ['Photo scans', 'scan' as QuotaKey],
-                  ['Meal refreshes','meals' as QuotaKey],
-                ]).map(([lb,k],i,arr)=>{
-                  const used = Math.min(FREE_LIMITS[k], FREE_LIMITS[k] - quotaRemaining(k));
-                  const pct  = Math.round((used / FREE_LIMITS[k]) * 100);
-                  const maxed= used>=FREE_LIMITS[k];
+                {(([
+                  ['Voice adds',   'voice'],
+                  ['Photo scans',  'scan'],
+                  ['Meal refreshes','meals'],
+                ] as const)).map(([lb,k],i,arr)=>{
+                  const limit = FREE_LIMITS[k];
+                  const used  = Math.min(limit, limit - quotaRemaining(k));
+                  const pct   = Math.round((used / limit) * 100);
+                  const maxed = used>=limit;
                   return (
                     <div key={k} style={{display:'flex',alignItems:'center',gap:12,padding:'8px 0',borderBottom: i<arr.length-1 ? '1px solid var(--border)' : 'none'}}>
                       <div style={{flex:1,minWidth:0}}>
@@ -1747,7 +1796,11 @@ export default function App() {
                     <div style={{width:44,height:44,borderRadius:44,background:color,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--serif)',color:'#fff',fontSize:18,fontWeight:500,flexShrink:0}}>{(m.name||'?').charAt(0).toUpperCase()}</div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:15,fontWeight:700,color:'var(--ink)'}}>{m.name||'Unnamed'}</div>
-                      <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>Age {m.age||'—'}{kidSafe?' · kid-safe meals':''}</div>
+                      <div style={{fontSize:12,color:'var(--gray)',marginTop:2}}>
+                        {(m.age ?? 30) < 18
+                          ? (kidSafe ? `Age ${m.age} · kid-safe meals` : `Age ${m.age}`)
+                          : 'Adult'}
+                      </div>
                     </div>
                     {!isEditing&&family.length>1&&(
                       <button onClick={()=>setEditingMember(m.id)} style={{background:'transparent',border:'1px solid var(--border)',borderRadius:999,padding:'6px 12px',cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,letterSpacing:1,color:'var(--navy)',fontWeight:700}}>EDIT</button>
