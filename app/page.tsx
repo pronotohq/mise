@@ -207,6 +207,40 @@ export default function App() {
   const [cookLog, setCookLog] = useState<CookLog[]>([]);
   const [isPremium, setIsPremium] = useState(false);
   const [shopList, setShopList] = useState<{id:string;name:string;checked:boolean}[]>([]);
+
+  // ── Freemium quotas (daily, reset at UTC midnight) ──────────────
+  const FREE_LIMITS = { voice: 3, scan: 1, meals: 3 } as const;
+  type QuotaKey = keyof typeof FREE_LIMITS;
+  interface QuotaRec { count: number; date: string; }
+  const today = () => new Date().toISOString().slice(0,10);
+  const [quota, setQuota] = useState<Record<QuotaKey, QuotaRec>>({
+    voice: { count: 0, date: today() },
+    scan:  { count: 0, date: today() },
+    meals: { count: 0, date: today() },
+  });
+  const quotaRemaining = (k: QuotaKey): number => {
+    if (isPremium) return Infinity;
+    const q = quota[k];
+    if (q.date !== today()) return FREE_LIMITS[k];
+    return Math.max(0, FREE_LIMITS[k] - q.count);
+  };
+  const quotaBump = (k: QuotaKey) => {
+    if (isPremium) return;
+    setQuota(prev => {
+      const q = prev[k];
+      const nextRec = q.date === today() ? { count: q.count + 1, date: today() } : { count: 1, date: today() };
+      const next = { ...prev, [k]: nextRec };
+      try { const cur = JSON.parse(localStorage.getItem('mise_v1')||'{}'); localStorage.setItem('mise_v1', JSON.stringify({...cur, quota:next})); } catch {}
+      return next;
+    });
+  };
+  const guardQuota = (k: QuotaKey): boolean => {
+    if (quotaRemaining(k) > 0) return true;
+    setShowPremium(true);
+    const nice = { voice: 'voice adds', scan: 'scans', meals: 'meal refreshes' }[k];
+    showToast(`Daily ${nice} used — upgrade for unlimited`);
+    return false;
+  };
   const [usedLog,  setUsedLog]  = useState<{id:string;name:string;price:number;date:string}[]>([]);
   const [wasteLog, setWasteLog] = useState<{id:string;name:string;price:number;date:string}[]>([]);
 
@@ -294,6 +328,7 @@ export default function App() {
         if(d.shopList) setShopList(d.shopList);
         if(d.usedLog)  setUsedLog(d.usedLog);
         if(d.wasteLog) setWasteLog(d.wasteLog);
+        if(d.quota)    setQuota(d.quota);
       } else {
         setProfile(p => ({ ...p, country: detectCountry() }));
       }
@@ -369,6 +404,7 @@ export default function App() {
   // ── Voice recording ─────────────────────────────────────────────
   const startVoice = async () => {
     if(recording){ stopVoice(); return; }
+    if(!guardQuota('voice')) return;
     setRecording(true);
     setVoiceTranscript('');
 
@@ -431,10 +467,13 @@ export default function App() {
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
       if(data.transcript) setVoiceTranscript(data.transcript);
-      if(data.items?.length) setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
-        item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
-        category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
-      })));
+      if(data.items?.length) {
+        setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
+          item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
+          category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+        })));
+        quotaBump('voice');
+      }
       else showToast('Could not parse that — try again');
     } catch { showToast('Voice processing failed'); }
     finally { setParsing(false); }
@@ -449,16 +488,20 @@ export default function App() {
       fd.append('lang', typeof navigator!=='undefined' ? (navigator.language||'en-IN') : 'en-IN');
       const res  = await fetch('/api/transcribe', {method:'POST',body:fd});
       const data = await res.json();
-      if(data.items?.length) setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
-        item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
-        category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
-      })));
+      if(data.items?.length) {
+        setPendingItems(data.items.map((i: {item_name:string;quantity?:number;unit?:string;category?:string;emoji?:string;price?:number})=>({
+          item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
+          category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
+        })));
+        quotaBump('voice');
+      }
       else showToast('Nothing recognised — try again');
     } catch { showToast('Parse error'); }
     finally { setParsing(false); }
   };
 
   const sendToScan = async (file: File) => {
+    if(!guardQuota('scan')) return;
     setParsing(true);
     try {
       const fd = new FormData();
@@ -471,6 +514,7 @@ export default function App() {
           item_name:i.item_name, quantity:i.quantity??1, unit:i.unit??'pcs',
           category:i.category??'Other', emoji:i.emoji??getEmoji(i.item_name), price:i.price,
         })));
+        quotaBump('scan');
         if (data.store) showToast(`${data.items.length} items from ${data.store}`);
       } else {
         showToast('No items detected — try a clearer photo');
@@ -503,6 +547,7 @@ export default function App() {
   // ── Generate meals ──────────────────────────────────────────────
   const generateMeals = useCallback(async (p: string, force=false) => {
     if(meals[p] && !force) return;
+    if(!guardQuota('meals')) return;
     setLoadingMeals(true);
     try {
       const sevenDaysAgo = Date.now() - 7*86400000;
@@ -528,10 +573,11 @@ export default function App() {
         }),
       });
       const data = await res.json();
-      if(data.meals?.length) setMeals(m=>({...m,[p]:data.meals}));
+      if(data.meals?.length) { setMeals(m=>({...m,[p]:data.meals})); quotaBump('meals'); }
     } catch { showToast('Could not generate meals'); }
     finally { setLoadingMeals(false); }
-  },[pantry, cookLog, profile, meals]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[pantry, cookLog, profile, meals, family]);
 
   useEffect(()=>{ if(tab==='meals') generateMeals(period); },[tab,period]);
   useEffect(()=>{ if(!showAdd){ setPendingItems([]); setVoiceTranscript(''); } },[showAdd]);
@@ -1645,6 +1691,40 @@ export default function App() {
             </div>
           </div>
 
+          {/* Today's usage / Premium */}
+          {!isPremium && (
+            <>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>TODAY · FREE PLAN</div>
+              <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,padding:14,marginBottom:20}}>
+                {([
+                  ['Voice adds', 'voice' as QuotaKey],
+                  ['Photo scans', 'scan' as QuotaKey],
+                  ['Meal refreshes','meals' as QuotaKey],
+                ]).map(([lb,k],i,arr)=>{
+                  const used = Math.min(FREE_LIMITS[k], FREE_LIMITS[k] - quotaRemaining(k));
+                  const pct  = Math.round((used / FREE_LIMITS[k]) * 100);
+                  const maxed= used>=FREE_LIMITS[k];
+                  return (
+                    <div key={k} style={{display:'flex',alignItems:'center',gap:12,padding:'8px 0',borderBottom: i<arr.length-1 ? '1px solid var(--border)' : 'none'}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:'var(--ink)'}}>{lb}</div>
+                        <div style={{height:5,background:'var(--cream)',borderRadius:3,marginTop:6,overflow:'hidden'}}>
+                          <div style={{height:5,width:`${pct}%`,background:maxed?'#C94A3A':'var(--navy)',borderRadius:3,transition:'width .3s'}}/>
+                        </div>
+                      </div>
+                      <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:maxed?'#C94A3A':'var(--gray)',letterSpacing:.4,minWidth:40,textAlign:'right'}}>
+                        {used}/{FREE_LIMITS[k]}
+                      </div>
+                    </div>
+                  );
+                })}
+                <button onClick={()=>setShowPremium(true)} style={{marginTop:12,width:'100%',background:'var(--navy)',color:'#fff',border:'none',borderRadius:10,padding:'10px',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                  👑 Upgrade — unlimited
+                </button>
+              </div>
+            </>
+          )}
+
           {/* Personal */}
           <div style={{fontFamily:'var(--mono)',fontSize:10,letterSpacing:1.2,color:'var(--gray)',marginBottom:10}}>PERSONAL</div>
           <div style={{background:'var(--white)',border:'1px solid var(--border)',borderRadius:14,overflow:'hidden'}}>
@@ -1819,44 +1899,57 @@ export default function App() {
   // ════════════════════════════════════════════════
   // PREMIUM MODAL
   // ════════════════════════════════════════════════
-  const renderPremium = () => (
-    <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)setShowPremium(false);}}>
-      <div className="modal-sheet">
-        <div className="modal-handle"/>
-        <div style={{padding:'16px 22px 12px',flexShrink:0}}>
-          <div style={{textAlign:'center',marginBottom:16}}>
-            <div style={{fontSize:38,marginBottom:8}}>👑</div>
-            <h2 style={{fontSize:22,fontWeight:900,color:'var(--ink)',letterSpacing:-.4}}>Mise Premium</h2>
-            <p style={{fontSize:13,color:'var(--gray)',marginTop:4}}>Your fridge, your meals, on autopilot.</p>
-          </div>
-          <div style={{background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',border:'2px solid #C68A2E',borderRadius:16,padding:'14px 16px',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <div><span style={{fontSize:34,fontWeight:900,color:'#92400E'}}>₹299</span><span style={{fontSize:14,color:'#B45309',fontWeight:600}}>/month</span></div>
-            <div style={{textAlign:'right'}}><p style={{fontSize:12,color:'#B45309',fontWeight:700}}>7-day free trial</p><p style={{fontSize:11,color:'#A57522'}}>Cancel anytime</p></div>
-          </div>
-        </div>
-        <div className="modal-body" style={{padding:'0 22px'}}>
-          {[['📧','Email auto-sync','Amazon, Swiggy, Blinkit, Foodpanda'],['🔔','Daily meal push','All 4 meals sent to you automatically'],['👶','Child safety filter','Every recipe pre-checked for toddler safety'],['📅','7-day meal plan','Full week planned every Sunday'],['📊','Spending insights','Waste tracking and efficiency score'],['🌍','All grocery apps','Zepto, BigBasket, Instacart, RedMart & more']].map(([ic,lb,sub])=>(
-            <div key={lb} style={{display:'flex',alignItems:'flex-start',gap:12,paddingBottom:12,marginBottom:12,borderBottom:'1px solid var(--border)'}}>
-              <div style={{width:34,height:34,borderRadius:10,background:'#FFFBEB',border:'1px solid #FDE68A',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>{ic}</div>
-              <div style={{flex:1}}><p style={{fontWeight:700,fontSize:13,color:'var(--ink)'}}>{lb}</p><p style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{sub}</p></div>
-              <div style={{width:18,height:18,borderRadius:9,background:'#DCFCE7',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:2,fontSize:11}}>✓</div>
+  const renderPremium = () => {
+    const priceCountry = { IN: {cur:'₹', amt:'199', per:'/mo'}, SG: {cur:'S$', amt:'5.99', per:'/mo'}, US: {cur:'$', amt:'5.99', per:'/mo'} }[profile.country];
+    return (
+      <div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)setShowPremium(false);}}>
+        <div className="modal-sheet">
+          <div className="modal-handle"/>
+          <div style={{padding:'16px 22px 12px',flexShrink:0}}>
+            <div style={{textAlign:'center',marginBottom:16}}>
+              <div style={{fontSize:38,marginBottom:8}}>👑</div>
+              <h2 style={{fontFamily:'var(--serif)',fontSize:26,fontWeight:500,color:'var(--ink)',letterSpacing:-.4}}>FreshNudge Premium</h2>
+              <p style={{fontSize:13,color:'var(--gray)',marginTop:4}}>Unlimited. Family-wide. Autopilot.</p>
             </div>
-          ))}
-          <div style={{background:'#FAF2EE',border:'1px solid #F4D8C8',borderRadius:12,padding:14,marginBottom:16}}>
-            <p style={{fontSize:13,fontWeight:700,color:'var(--navy)',marginBottom:8}}>💡 The math</p>
-            <p style={{fontSize:12,color:'var(--inkM)',lineHeight:1.7}}>One unnecessary Swiggy/Deliveroo order = ₹600–800. Mise costs <strong>₹299/month</strong>. Stop one delivery order and the app pays for itself.</p>
+            <div style={{background:'#FAF2EE',border:'2px solid var(--navy)',borderRadius:16,padding:'14px 16px',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <span style={{fontFamily:'var(--serif)',fontSize:34,fontWeight:500,color:'var(--navy)'}}>{priceCountry.cur}{priceCountry.amt}</span>
+                <span style={{fontSize:14,color:'var(--gray)',fontWeight:600}}>{priceCountry.per}</span>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <p style={{fontSize:12,color:'var(--navy)',fontWeight:700}}>7-day free trial</p>
+                <p style={{fontSize:11,color:'var(--gray)'}}>Cancel anytime</p>
+              </div>
+            </div>
           </div>
-        </div>
-        <div style={{padding:'12px 22px',paddingBottom:'max(28px,env(safe-area-inset-bottom))'}}>
-          <button onClick={()=>{setIsPremium(true);save({isPremium:true});setShowPremium(false);showToast('🎉 Welcome to Premium!');}}
-            style={{width:'100%',background:'linear-gradient(135deg,#C68A2E,#A57522)',border:'none',borderRadius:16,padding:16,fontSize:16,fontWeight:900,color:'#fff',cursor:'pointer',fontFamily:'inherit',marginBottom:10}}>
-            👑 Start 7-day free trial
-          </button>
-          <button onClick={()=>setShowPremium(false)} style={{width:'100%',background:'none',border:'none',color:'var(--gray)',fontSize:13,cursor:'pointer',padding:6,fontFamily:'inherit'}}>Maybe later</button>
+          <div className="modal-body" style={{padding:'0 22px'}}>
+            {[
+              ['🎙️','Unlimited voice adds','No more 3/day cap'],
+              ['📷','Unlimited photo scans','Fridge shelves, receipts, grocery screenshots'],
+              ['🍳','Unlimited meal refreshes','Regenerate as often as you like'],
+              ['👨‍👩‍👧','Family sharing','Share fridge + shopping list with partner/cook'],
+              ['💬','WhatsApp sync (coming v2)','Cook texts "paneer khatam" → auto-updates'],
+              ['📅','7-day meal plan','Full week planned automatically'],
+              ['📧','Receipt email sync (v2)','Auto-import from Blinkit / FairPrice / Amazon'],
+            ].map(([ic,lb,sub])=>(
+              <div key={lb} style={{display:'flex',alignItems:'flex-start',gap:12,paddingBottom:12,marginBottom:12,borderBottom:'1px solid var(--border)'}}>
+                <div style={{width:34,height:34,borderRadius:10,background:'var(--cream)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>{ic}</div>
+                <div style={{flex:1}}><p style={{fontWeight:700,fontSize:13,color:'var(--ink)'}}>{lb}</p><p style={{fontSize:12,color:'var(--gray)',marginTop:2}}>{sub}</p></div>
+                <div style={{width:18,height:18,borderRadius:9,background:'#DCFCE7',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:2,fontSize:11}}>✓</div>
+              </div>
+            ))}
+          </div>
+          <div style={{padding:'12px 22px',paddingBottom:'max(28px,env(safe-area-inset-bottom))'}}>
+            <button onClick={()=>{setIsPremium(true);save({isPremium:true});setShowPremium(false);showToast('🎉 Welcome to Premium!');}}
+              style={{width:'100%',background:'var(--navy)',border:'none',borderRadius:16,padding:16,fontSize:15,fontWeight:700,color:'#fff',cursor:'pointer',fontFamily:'inherit',marginBottom:10}}>
+              Start 7-day free trial
+            </button>
+            <button onClick={()=>setShowPremium(false)} style={{width:'100%',background:'none',border:'none',color:'var(--gray)',fontSize:13,cursor:'pointer',padding:6,fontFamily:'inherit'}}>Maybe later</button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // ════════════════════════════════════════════════
   // ADD SHEET (Voice / Type / Scan) — scan = premium
