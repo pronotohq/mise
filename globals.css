@@ -1,7 +1,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
 :root {
-  /* FreshNudge — warm editorial palette */
+  /* fridgeBee — warm editorial palette */
   --navy:  #C94A3A;  --navyD: #A8382A;   /* primary accent = tomato */
   --sage:  #4A6B3A;  --sageL: #86A87A;   /* secondary = deep sage */
   --red:   #C94A3A;  --gold:  #C68A2E;  --goldD: #A57522;

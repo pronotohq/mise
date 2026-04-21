@@ -3,7 +3,7 @@
  *
  * Inbound email webhook endpoint. Email providers (SendGrid Inbound Parse,
  * Mailgun Routes, Postmark Inbound) POST parsed email data here whenever
- * a user forwards an order confirmation to their unique FreshNudge address.
+ * a user forwards an order confirmation to their unique fridgeBee address.
  *
  * ## Flow
  * 1. Receive the webhook payload (from, to, subject, text/html body).
@@ -184,7 +184,7 @@ const SHELF_LIFE: Record<string, number> = {
 const MAX_SYNC_LOG_ENTRIES = 10;
 
 // Stateless userId resolution via HMAC (mirrors generate/route.ts)
-const SYNC_SECRET = process.env.SYNC_EMAIL_SECRET || 'freshnudge-sync-secret-change-in-prod';
+const SYNC_SECRET = process.env.SYNC_EMAIL_SECRET || 'fridgebee-sync-secret-change-in-prod';
 function deriveToken(userId: string): string {
   return crypto.createHmac('sha256', SYNC_SECRET).update(userId).digest('base64url').slice(0, 12);
 }
@@ -399,7 +399,7 @@ async function parseEmailWithClaude(
     apiKey: process.env.OPENAI_API_KEY,
   });
 
-  const systemPrompt = `You are a grocery order email parser for FreshNudge, a kitchen inventory app.
+  const systemPrompt = `You are a grocery order email parser for fridgeBee, a kitchen inventory app.
 
 Regional context: ${regionalContext}
 

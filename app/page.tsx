@@ -634,11 +634,11 @@ export default function App() {
       const urgentCount = pantry.filter(i => daysLeft(i.expiry) <= 1).length;
       const body = urgentCount > 0
         ? `${urgentCount} item${urgentCount>1?'s':''} expiring soon. Tap to see what to cook.`
-        : `What's for ${key==='latenight'?'a late bite':key}? Open FreshNudge.`;
+        : `What's for ${key==='latenight'?'a late bite':key}? Open fridgeBee.`;
 
       timers.push(setTimeout(() => {
         try {
-          new Notification(labels[key] || 'FreshNudge', {
+          new Notification(labels[key] || 'fridgeBee', {
             body,
             icon: '/icon-192.png',
             tag: `fn-${key}`,
@@ -739,35 +739,79 @@ export default function App() {
 
         {step==='welcome'&&(
           <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 28px',background:'linear-gradient(180deg,var(--cream) 0%,var(--surf) 100%)'}}>
-            {/* Cute doodle fridge with face — drops in on mount */}
-            <div style={{animation:'drop-bounce 1.1s cubic-bezier(.34,1.2,.64,1) both',marginBottom:18,transformOrigin:'50% 100%'}}>
-              <svg width="96" height="118" viewBox="0 0 96 118" fill="none" style={{display:'block'}}>
-                {/* legs */}
+            {/* fridgeBee mascot scene — bee tends the fridge like her hive */}
+            <div style={{position:'relative',width:150,height:185,marginBottom:18,animation:'drop-bounce 1.1s cubic-bezier(.34,1.2,.64,1) both'}}>
+
+              {/* ── Fridge (the hive) ── */}
+              <svg width="104" height="128" viewBox="0 0 96 118" fill="none"
+                   style={{position:'absolute',bottom:0,left:'50%',transform:'translateX(-50%)'}}>
                 <line x1="18" y1="114" x2="18" y2="118" stroke="#1F1A14" strokeWidth="2.6" strokeLinecap="round"/>
                 <line x1="78" y1="114" x2="78" y2="118" stroke="#1F1A14" strokeWidth="2.6" strokeLinecap="round"/>
-                {/* body */}
                 <path d="M 12 10 Q 12 6 16 6 L 80 6 Q 84 6 84 10 L 84 110 Q 84 114 80 114 L 16 114 Q 12 114 12 110 Z"
-                      stroke="#1F1A14" strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" fill="#FFFBF5"/>
-                {/* top-freezer divider */}
+                      stroke="#1F1A14" strokeWidth="2.6" fill="#FFFBF5"/>
+                {/* honeycomb on lower door */}
+                <g opacity="0.22" stroke="#C68A2E" strokeWidth="1" fill="none">
+                  <polygon points="36,56 42,52 48,56 48,63 42,67 36,63"/>
+                  <polygon points="48,56 54,52 60,56 60,63 54,67 48,63"/>
+                  <polygon points="60,56 66,52 72,56 72,63 66,67 60,63"/>
+                  <polygon points="42,67 48,63 54,67 54,74 48,78 42,74"/>
+                  <polygon points="54,67 60,63 66,67 66,74 60,78 54,74"/>
+                  <polygon points="36,78 42,74 48,78 48,85 42,89 36,85"/>
+                  <polygon points="48,78 54,74 60,78 60,85 54,89 48,85"/>
+                  <polygon points="60,78 66,74 72,78 72,85 66,89 60,85"/>
+                </g>
+                {/* honey drip on top */}
+                <path d="M 42 6 Q 42 0 44 -3 Q 46 -6 48 -6 Q 50 -6 52 -3 Q 54 0 54 6"
+                      fill="#F5C418" stroke="#C68A2E" strokeWidth="1" style={{animation:'honey-drip 2.4s ease-in-out infinite'}}/>
                 <path d="M 12 42 Q 24 43 48 42 Q 72 41 84 42" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
-                {/* handles */}
                 <rect x="20" y="18" width="4" height="14" rx="2" fill="#1F1A14"/>
                 <rect x="20" y="54" width="4" height="18" rx="2" fill="#1F1A14"/>
-                {/* FACE — eyes + smile on the lower door */}
+                {/* face */}
                 <circle cx="40" cy="72" r="3" fill="#1F1A14"/>
                 <circle cx="60" cy="72" r="3" fill="#1F1A14"/>
-                <path d="M 38 84 Q 50 94 62 84" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
-                {/* rosy cheeks */}
+                <path d="M 38 84 Q 50 92 62 84" stroke="#1F1A14" strokeWidth="2.4" strokeLinecap="round" fill="none"/>
                 <ellipse cx="34" cy="82" rx="4" ry="2.5" fill="#F4A7B5" opacity=".7"/>
                 <ellipse cx="66" cy="82" rx="4" ry="2.5" fill="#F4A7B5" opacity=".7"/>
-                {/* little food peeking out the top — strawberry + leaf */}
-                <path d="M 46 -2 L 42 4 L 50 4 Z" fill="#C94A3A"/>
-                <path d="M 44 -1 Q 46 2 48 -1" stroke="#4A6B3A" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
-                {/* sparkles around */}
+                {/* sparkles */}
                 <path d="M 4 28 L 7 30 L 4 32 L 1 30 Z" fill="#C68A2E"/>
                 <circle cx="92" cy="24" r="2" fill="#4A6B3A"/>
-                <path d="M 90 60 L 93 62 L 90 64 L 87 62 Z" fill="#C94A3A" opacity=".7"/>
               </svg>
+
+              {/* ── Bee flying above/around fridge ── */}
+              <div style={{position:'absolute',top:2,left:'calc(50% - 2px)',animation:'bee-bob 2.6s ease-in-out infinite'}}>
+                <svg width="38" height="52" viewBox="0 0 38 52" fill="none" style={{overflow:'visible'}}>
+                  {/* antennae */}
+                  <path d="M 14 9 Q 11 4 9 1" stroke="#2D2200" strokeWidth="1.6" strokeLinecap="round"/>
+                  <circle cx="9" cy="1" r="2.2" fill="#C68A2E"/>
+                  <path d="M 24 9 Q 27 4 29 1" stroke="#2D2200" strokeWidth="1.6" strokeLinecap="round"/>
+                  <circle cx="29" cy="1" r="2.2" fill="#C68A2E"/>
+                  {/* wings */}
+                  <ellipse cx="8"  cy="21" rx="10" ry="5.5" fill="rgba(200,235,255,0.82)" stroke="rgba(100,160,220,0.4)" strokeWidth="0.7"
+                           style={{transformOrigin:'13px 21px',animation:'bee-wing 0.09s ease-in-out infinite alternate'}}/>
+                  <ellipse cx="30" cy="21" rx="10" ry="5.5" fill="rgba(200,235,255,0.82)" stroke="rgba(100,160,220,0.4)" strokeWidth="0.7"
+                           style={{transformOrigin:'25px 21px',animation:'bee-wing 0.09s ease-in-out infinite alternate-reverse'}}/>
+                  {/* body */}
+                  <ellipse cx="19" cy="36" rx="11" ry="14" fill="#F5C418"/>
+                  {/* stripes */}
+                  <path d="M 9 31 Q 19 33 29 31" stroke="#2D2200" strokeWidth="4" strokeLinecap="round"/>
+                  <path d="M 9 38 Q 19 40 29 38" stroke="#2D2200" strokeWidth="4" strokeLinecap="round"/>
+                  <path d="M 10 45 Q 19 47 28 45" stroke="#2D2200" strokeWidth="2.5" strokeLinecap="round"/>
+                  {/* stinger */}
+                  <ellipse cx="19" cy="51" rx="3.5" ry="2" fill="#C68A2E"/>
+                  {/* head */}
+                  <circle cx="19" cy="16" r="9.5" fill="#F5C418" stroke="#2D2200" strokeWidth="1.6"/>
+                  {/* eyes */}
+                  <circle cx="14.5" cy="15" r="2.6" fill="#2D2200"/>
+                  <circle cx="23.5" cy="15" r="2.6" fill="#2D2200"/>
+                  <circle cx="15.3" cy="13.6" r="1" fill="white"/>
+                  <circle cx="24.3" cy="13.6" r="1" fill="white"/>
+                  {/* smile */}
+                  <path d="M 14 20 Q 19 24 24 20" stroke="#2D2200" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+                </svg>
+              </div>
+
+              {/* tiny honey jar beside fridge */}
+              <div style={{position:'absolute',bottom:18,right:6,fontSize:16,animation:'honey-drip 3s ease-in-out infinite'}}>🍯</div>
             </div>
 
             {/* Logo — Caveat handwritten */}
@@ -778,7 +822,7 @@ export default function App() {
               margin:0, textAlign:'center',
               animation:'fadeInDelay 1.2s ease-out both',
             }}>
-              FreshNudge
+              fridgeBee
             </h1>
 
             <p style={{
@@ -987,7 +1031,7 @@ export default function App() {
             {notifPermission==='granted' && (
               <button onClick={()=>{
                 try {
-                  new Notification('FreshNudge test 🔔', {
+                  new Notification('fridgeBee test 🔔', {
                     body: 'Permissions look good. Real reminders will fire at the times below while the app is open.',
                     icon: '/icon-192.png',
                     tag: 'fn-test',
@@ -1083,7 +1127,7 @@ export default function App() {
                 </svg>
               </div>
               <h2 style={{fontFamily:'var(--serif)',fontSize:36,fontWeight:500,color:'var(--ink)',letterSpacing:-.5,lineHeight:1.1}}>Welcome{profile.name?`, ${profile.name}`:''}<br/>— you are all set.</h2>
-              <p style={{fontSize:14,color:'var(--gray)',marginTop:14,lineHeight:1.5,maxWidth:320}}>We&apos;ve seeded your fridge with a typical weeknight stash so you can see FreshNudge in action. Swap it out as you shop.</p>
+              <p style={{fontSize:14,color:'var(--gray)',marginTop:14,lineHeight:1.5,maxWidth:320}}>We&apos;ve seeded your fridge with a typical weeknight stash so you can see fridgeBee in action. Swap it out as you shop.</p>
             </div>
             <button className="btn-primary" onClick={completeOnboarding} style={{fontSize:15,padding:16,marginTop:24}}>Open my fridge →</button>
           </div>
@@ -1584,7 +1628,7 @@ export default function App() {
           <button
             onClick={()=>{
               if(!isPremium){ setShowPremium(true); return; }
-              const text = `My FreshNudge list:\n${toBuy.map(i=>`• ${i.name}`).join('\n')||'(empty)'}`;
+              const text = `My fridgeBee list:\n${toBuy.map(i=>`• ${i.name}`).join('\n')||'(empty)'}`;
               const nav = navigator as Navigator & { share?: (d:{text:string;title:string})=>Promise<void> };
               if(nav.share) nav.share({title:'Shopping list',text}).catch(()=>{});
               else { navigator.clipboard?.writeText(text); showToast('Copied to clipboard'); }
@@ -1984,11 +2028,11 @@ export default function App() {
             <EditableRow fieldKey="allergies" label="Allergies &amp; dislikes" value={(profile.allergies||[]).join(', ')||'None'}/>
           </div>
 
-          <div style={{marginTop:22,textAlign:'center',fontFamily:'var(--mono)',fontSize:10,color:'var(--gray)',letterSpacing:1}}>FRESHNUDGE · v1.0</div>
+          <div style={{marginTop:22,textAlign:'center',fontFamily:'var(--mono)',fontSize:10,color:'var(--gray)',letterSpacing:1}}>FRIDGEBEE · v1.0</div>
 
           {(() => {
-            const url  = typeof window!=='undefined' ? window.location.origin : 'https://freshnudge.com';
-            const text = `Try FreshNudge — your smart kitchen agent. ${url}`;
+            const url  = typeof window!=='undefined' ? window.location.origin : 'https://fridgebee.app';
+            const text = `Try fridgeBee — your smart kitchen agent. ${url}`;
             return (
               <div style={{marginTop:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                 <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer"
@@ -1998,7 +2042,7 @@ export default function App() {
                 </a>
                 <button onClick={()=>{
                   const nav = navigator as Navigator & { share?: (d:{text:string;title:string;url:string})=>Promise<void> };
-                  if (nav.share) nav.share({title:'FreshNudge',text,url}).catch(()=>{});
+                  if (nav.share) nav.share({title:'fridgeBee',text,url}).catch(()=>{});
                   else { navigator.clipboard?.writeText(text); showToast('Link copied'); }
                 }} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:14,padding:12,fontSize:13,fontWeight:700,color:'var(--ink)',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
@@ -2033,7 +2077,7 @@ export default function App() {
           <div style={{padding:'16px 22px 12px',flexShrink:0}}>
             <div style={{textAlign:'center',marginBottom:16}}>
               <div style={{fontSize:38,marginBottom:8}}>👑</div>
-              <h2 style={{fontFamily:'var(--serif)',fontSize:26,fontWeight:500,color:'var(--ink)',letterSpacing:-.4}}>FreshNudge Premium</h2>
+              <h2 style={{fontFamily:'var(--serif)',fontSize:26,fontWeight:500,color:'var(--ink)',letterSpacing:-.4}}>fridgeBee Premium</h2>
               <p style={{fontSize:13,color:'var(--gray)',marginTop:4}}>Unlimited. Family-wide. Autopilot.</p>
             </div>
             <div style={{background:'#FAF2EE',border:'2px solid var(--navy)',borderRadius:16,padding:'14px 16px',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>

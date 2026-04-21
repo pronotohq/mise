@@ -1,6 +1,6 @@
 {
-  "name": "FreshNudge — Kitchen OS",
-  "short_name": "FreshNudge",
+  "name": "fridgeBee — Kitchen OS",
+  "short_name": "fridgeBee",
   "description": "Your kitchen, on autopilot.",
   "start_url": "/",
   "display": "standalone",

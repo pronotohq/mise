@@ -1,4 +1,4 @@
-// FreshNudge — client-side web push helper.
+// fridgeBee — client-side web push helper.
 // - Registers the service worker
 // - Subscribes to PushManager using the VAPID public key
 // - POSTs the subscription + user prefs to /api/push-subscription

@@ -1,7 +1,7 @@
-// FreshNudge Service Worker
+// fridgeBee Service Worker
 // Handles push notifications and offline caching
 
-const CACHE = 'freshnudge-v1';
+const CACHE = 'fridgebee-v1';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
@@ -15,7 +15,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('push', e => {
   const data = e.data?.json() ?? {};
   e.waitUntil(
-    self.registration.showNotification(data.title || 'FreshNudge 🍳', {
+    self.registration.showNotification(data.title || 'fridgeBee 🍳', {
       body:    data.body  || 'Tap to see what to cook tonight.',
       icon:    '/icon-192.png',
       badge:   '/icon-192.png',

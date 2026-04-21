@@ -82,7 +82,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const vPub = process.env.VAPID_PUBLIC_KEY;
   const vPri = process.env.VAPID_PRIVATE_KEY;
-  const vSub = process.env.VAPID_SUBJECT || 'mailto:hello@freshnudge.com';
+  const vSub = process.env.VAPID_SUBJECT || 'mailto:hello@fridgebee.com';
   if (!vPub || !vPri) {
     return NextResponse.json({ error: 'VAPID keys not configured' }, { status: 500 });
   }
@@ -127,8 +127,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       await kv.set(dedupe, 1, { ex: 60 * 10 });
 
       const payload = JSON.stringify({
-        title: MEAL_LABEL[mealToSend] || 'FreshNudge',
-        body:  `Hey ${rec.prefs.name || 'there'} — what's for ${mealToSend}? Open FreshNudge to see what you can cook.`,
+        title: MEAL_LABEL[mealToSend] || 'fridgeBee',
+        body:  `Hey ${rec.prefs.name || 'there'} — what's for ${mealToSend}? Open fridgeBee to see what you can cook.`,
         url:   '/',
         tag:   `fn-${mealToSend}`,
       });

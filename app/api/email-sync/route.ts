@@ -2,7 +2,7 @@
 // Parses a grocery order confirmation email (FoodPanda, GrabMart, Swiggy,
 // Blinkit, Amazon Fresh, NTUC, etc.) and returns structured grocery items.
 // The user either pastes the email body, or forwards it to their unique
-// FreshNudge address which calls this endpoint via webhook.
+// fridgeBee address which calls this endpoint via webhook.
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 

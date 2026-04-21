@@ -6,8 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { kv } from '@/lib/kv';
 
-const INBOUND_DOMAIN = 'inbound.freshnudge.app';
-const SECRET = process.env.SYNC_EMAIL_SECRET || 'freshnudge-sync-secret-change-in-prod';
+const INBOUND_DOMAIN = 'inbound.fridgebee.app';
+const SECRET = process.env.SYNC_EMAIL_SECRET || 'fridgebee-sync-secret-change-in-prod';
 
 function deriveToken(userId: string): string {
   return crypto

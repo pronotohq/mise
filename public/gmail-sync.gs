@@ -1,5 +1,5 @@
 /**
- * FreshNudge Gmail Auto-Sync
+ * fridgeBee Gmail Auto-Sync
  * ─────────────────────────────────────────────────────────────────────────────
  * Paste this into Google Apps Script (script.google.com), set your config
  * below, then click "Run" once to grant permissions, then set a trigger:
@@ -8,9 +8,9 @@
  */
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const FRESHNUDGE_WEBHOOK = 'https://echokitchen-lac.vercel.app/api/inbound-email/webhook';
-const FRESHNUDGE_USER_ID = 'YOUR_USER_ID_HERE';  // e.g. user_rc41spjy
-const LABEL_PROCESSED    = 'FreshNudge/Synced';   // created automatically
+const FRIDGEBEE_WEBHOOK = 'https://echokitchen-lac.vercel.app/api/inbound-email/webhook';
+const FRIDGEBEE_USER_ID = 'YOUR_USER_ID_HERE';  // e.g. user_rc41spjy
+const LABEL_PROCESSED    = 'fridgeBee/Synced';   // created automatically
 
 // Senders to watch — matched against the From address domain
 const WATCHED_SENDERS = [
@@ -42,11 +42,11 @@ function onNewOrderEmail() {
       const body = msg.getPlainBody() || msg.getBody().replace(/<[^>]+>/g, ' ');
 
       try {
-        const res = UrlFetchApp.fetch(FRESHNUDGE_WEBHOOK, {
+        const res = UrlFetchApp.fetch(FRIDGEBEE_WEBHOOK, {
           method: 'post',
           contentType: 'application/json',
           payload: JSON.stringify({
-            userId: FRESHNUDGE_USER_ID,
+            userId: FRIDGEBEE_USER_ID,
             from:    msg.getFrom(),
             to:      msg.getTo(),
             subject: msg.getSubject(),
@@ -57,9 +57,9 @@ function onNewOrderEmail() {
         });
 
         const result = JSON.parse(res.getContentText());
-        Logger.log(`[FreshNudge] ${result.status} — ${result.itemCount || 0} items from ${result.store || 'unknown'}`);
+        Logger.log(`[fridgeBee] ${result.status} — ${result.itemCount || 0} items from ${result.store || 'unknown'}`);
       } catch (e) {
-        Logger.log(`[FreshNudge] Error: ${e}`);
+        Logger.log(`[fridgeBee] Error: ${e}`);
       }
     });
 
@@ -71,7 +71,7 @@ function onNewOrderEmail() {
 function getOrCreateLabel(name) {
   let label = GmailApp.getUserLabelByName(name);
   if (!label) {
-    // Create nested label (FreshNudge/Synced)
+    // Create nested label (fridgeBee/Synced)
     try { label = GmailApp.createLabel(name); } catch(e) {}
   }
   return label;
